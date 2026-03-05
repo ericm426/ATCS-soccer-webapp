@@ -1,10 +1,792 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Soccer Match Tracker App</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniTrack · Soccer</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<!-- ════════════════════ MATCHES VIEW ════════════════════ -->
+<div id="view-matches" class="page view active">
+  <header class="app-header">
+    <div class="app-logo">
+      <div class="logo-mark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c1.37 0 2.67.28 3.86.78l-1.57 2.71-2.29-.74-2.29.74-1.57-2.71A7.94 7.94 0 0 1 12 4zM4.07 13H7.1l1 3.08-2.46 1.79A7.964 7.964 0 0 1 4.07 13zm3.53 5.55 2.46-1.79 1.94.63 1.94-.63 2.46 1.79A8.01 8.01 0 0 1 12 20a8.01 8.01 0 0 1-4.4-1.45zM16.9 16.08l1-3.08h3.03a7.964 7.964 0 0 1-1.57 4.87L16.9 16.08zm.99-5.08H14.5l-.94-2.9 1.57-2.71A8.027 8.027 0 0 1 19.93 11H17.89zM9.87 8.1 11 11H9l-1.87-2.9A8.04 8.04 0 0 1 9.87 8.1zm-2.3 2.9L9.5 14.5H7.08L6 11h1.57z"/>
+        </svg>
+      </div>
+      <span class="app-name">Omni<span class="dot">Track</span></span>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" aria-label="Notifications">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        <span class="badge-dot"></span>
+      </button>
+      <button class="icon-btn" aria-label="Bookmarks">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+        </svg>
+      </button>
+      <button class="avatar-btn">JD</button>
+    </div>
+  </header>
+
+  <div class="section-header">
+    <span class="section-title">Featured This Week</span>
+    <a href="#" class="section-link" id="all-matches-link">View All</a>
+  </div>
+
+  <div class="featured-grid" id="featured-grid">
+    <div class="fc-skeleton"></div>
+    <div class="fc-skeleton"></div>
+    <div class="fc-skeleton"></div>
+    <div class="fc-skeleton"></div>
+  </div>
+
+  <div class="section-header" style="margin-top:12px">
+    <span class="section-title">Upcoming Fixtures</span>
+  </div>
+
+  <div class="fixtures-table" id="fixtures-table">
+    <div class="fx-head">
+      <span>Date</span><span>Match</span><span>League</span><span>Tickets</span>
+    </div>
+    <div class="fx-loading">Loading fixtures…</div>
+  </div>
+</div>
+
+<!-- ════════════════════ SQUAD VIEW ════════════════════ -->
+<div id="view-squad" class="page view">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;padding-bottom:6px">
+    <h1 class="page-title">Squad &amp; Staff</h1>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="team-select" class="filter-select" style="min-width:140px">
+        <option value="">Select Team…</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="sub-tabs">
+    <button class="sub-tab active" data-subtab="roster">Active Roster</button>
+    <button class="sub-tab" data-subtab="injuries">Injuries</button>
+    <button class="sub-tab" data-subtab="staff">Staff</button>
+  </div>
+
+  <!-- Manager Card -->
+  <div class="section-header" style="margin-top:8px">
+    <span class="section-title">Manager / Coach</span>
+  </div>
+  <div class="manager-card" id="manager-card">
+    <div class="manager-avatar" id="manager-initials">—</div>
+    <div class="manager-info">
+      <div class="manager-name" id="manager-name">Select a team</div>
+      <div class="manager-role">Head Coach</div>
+    </div>
+    <div class="manager-badge">Expert</div>
+    <div class="manager-form-wrap">
+      <span class="form-label">Form</span>
+      <div class="form-bar"><div class="form-fill" style="--pct:70%"></div></div>
+    </div>
+  </div>
+
+  <!-- Active Roster panel -->
+  <div id="panel-roster">
+    <div class="section-header">
+      <span class="section-title">Active Players <span class="count-chip" id="player-count">0</span></span>
+      <div style="position:relative">
+        <input id="player-search" class="search-input" type="text" placeholder="Search…">
+      </div>
+    </div>
+
+    <div class="player-table" id="player-table">
+      <div class="pt-head">
+        <span>#</span><span>Name</span><span>Pos</span><span>Stats</span><span>Apps</span><span>Status</span>
+      </div>
+      <div class="pt-empty">Select a team to view players</div>
+    </div>
+
+    <div class="pagination" id="player-pagination" style="display:none">
+      <button class="pg-btn" id="pg-prev">&#8249;</button>
+      <span class="pg-info" id="pg-label">Page 1</span>
+      <button class="pg-btn" id="pg-next">&#8250;</button>
+    </div>
+  </div>
+
+  <!-- Injuries panel -->
+  <div id="panel-injuries" style="display:none">
+    <div class="section-header" style="margin-top:4px">
+      <span class="section-title">Injured List <span class="count-chip injured">3</span></span>
+    </div>
+    <div class="injury-list">
+      <div class="injury-row">
+        <div class="injury-alert">!</div>
+        <div class="injury-info">
+          <div class="injury-name">A. Becker</div>
+          <div class="injury-detail">Hamstring &middot; Out: 2 Weeks</div>
+        </div>
+        <div class="injury-recov">
+          <div class="recov-bar"><div class="recov-fill" style="--pct:40%"></div></div>
+          <span class="recov-pct">40%</span>
+        </div>
+      </div>
+      <div class="injury-row">
+        <div class="injury-alert">!</div>
+        <div class="injury-info">
+          <div class="injury-name">S. Tanaka</div>
+          <div class="injury-detail">Ankle &middot; Out: 5 Days</div>
+        </div>
+        <div class="injury-recov">
+          <div class="recov-bar"><div class="recov-fill" style="--pct:80%"></div></div>
+          <span class="recov-pct">80%</span>
+        </div>
+      </div>
+      <div class="injury-row">
+        <div class="injury-alert danger">!</div>
+        <div class="injury-info">
+          <div class="injury-name">P. Moore</div>
+          <div class="injury-detail">Knee &middot; Out: 3 Months</div>
+        </div>
+        <div class="injury-recov">
+          <div class="recov-bar"><div class="recov-fill danger" style="--pct:10%"></div></div>
+          <span class="recov-pct">10%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff panel -->
+  <div id="panel-staff" style="display:none">
+    <div class="section-header" style="margin-top:4px">
+      <span class="section-title">Coaching Staff</span>
+    </div>
+    <div class="staff-list">
+      <div class="staff-row">
+        <div class="manager-avatar" style="width:38px;height:38px;font-size:12px">JS</div>
+        <div class="manager-info"><div class="manager-name" style="font-size:15px">Julian Schmidt</div><div class="manager-role">Head Coach</div></div>
+        <div class="manager-badge">Expert</div>
+      </div>
+      <div class="staff-row">
+        <div class="manager-avatar" style="width:38px;height:38px;font-size:12px;background:rgba(100,160,255,0.1);color:#64a0ff;border-color:rgba(100,160,255,0.2)">AM</div>
+        <div class="manager-info"><div class="manager-name" style="font-size:15px">Andrea Mancini</div><div class="manager-role">Assistant Coach</div></div>
+        <div class="manager-badge" style="color:#64a0ff;background:rgba(100,160,255,0.1);border-color:rgba(100,160,255,0.2)">Senior</div>
+      </div>
+      <div class="staff-row">
+        <div class="manager-avatar" style="width:38px;height:38px;font-size:12px;background:rgba(255,200,0,0.1);color:#ffc800;border-color:rgba(255,200,0,0.2)">RK</div>
+        <div class="manager-info"><div class="manager-name" style="font-size:15px">Ryan Köhler</div><div class="manager-role">Fitness Coach</div></div>
+        <div class="manager-badge" style="color:#ffc800;background:rgba(255,200,0,0.1);border-color:rgba(255,200,0,0.2)">Specialist</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ TEAMS VIEW ════════════════════ -->
+<div id="view-teams" class="page view">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;padding-bottom:6px">
+    <h1 class="page-title">Teams</h1>
+    <div style="position:relative">
+      <input id="team-search" class="search-input" type="text" placeholder="Search teams…">
+    </div>
+  </div>
+
+  <div class="section-header">
+    <span class="section-title">Favorite Teams</span>
+    <button class="section-link" id="add-fav-btn" style="background:none;border:none;cursor:pointer;font-family:inherit">+ Add Team</button>
+  </div>
+
+  <div class="fav-teams-row" id="fav-teams-row">
+    <div class="fav-add-card" id="fav-add-card">
+      <div class="fav-add-icon">+</div>
+      <div class="fav-info"><div class="fav-name" style="color:var(--muted)">Add a favorite</div></div>
+    </div>
+  </div>
+
+  <div class="section-header" style="margin-top:12px">
+    <span class="section-title">All Teams</span>
+    <span class="count-chip" id="teams-count">0</span>
+  </div>
+
+  <div class="team-filters">
+    <select class="filter-select" id="league-filter">
+      <option value="">All Leagues</option>
+    </select>
+    <select class="filter-select" id="sort-filter">
+      <option value="name-asc">A → Z</option>
+      <option value="name-desc">Z → A</option>
+      <option value="founded">Founded</option>
+    </select>
+  </div>
+
+  <div class="teams-table" id="teams-table">
+    <div class="tt-head">
+      <span>Team</span><span class="tt-league-col">League</span><span>Status</span>
+    </div>
+    <div class="pt-empty">Loading teams…</div>
+  </div>
+
+  <div class="pagination" id="teams-pagination" style="justify-content:space-between;display:none">
+    <button class="pg-btn" id="tpg-prev">&#8249;</button>
+    <span class="pg-info" id="tpg-label">Page 1</span>
+    <button class="pg-btn" id="tpg-next">&#8250;</button>
+  </div>
+</div>
+
+<!-- ════════════════════ BOTTOM NAV ════════════════════ -->
+<nav class="bottom-nav">
+  <button class="nav-item active" data-view="matches">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+    </svg>
+    <span class="nav-label">Matches</span>
+  </button>
+  <button class="nav-item" data-view="squad">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+    <span class="nav-label">Players</span>
+  </button>
+  <button class="nav-item" data-view="teams">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
+    </svg>
+    <span class="nav-label">Teams</span>
+  </button>
+  <button class="nav-item" data-view="matches">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+    <span class="nav-label">Explore</span>
+  </button>
+</nav>
+
+<script>
+/* ══════════════════════════════════════════
+   State
+══════════════════════════════════════════ */
+let allTeams = [], allPlayers = [], allMatches = [];
+let teamsMap = {};
+let favTeamIds = new Set(JSON.parse(localStorage.getItem('favTeams') || '[]'));
+
+// Pagination state
+const PLAYERS_PER_PAGE = 8;
+const TEAMS_PER_PAGE = 8;
+let playerPage = 1, playerFiltered = [];
+let teamPage = 1, teamFiltered = [];
+
+/* ══════════════════════════════════════════
+   Utilities
+══════════════════════════════════════════ */
+function abbr(name) {
+  if (!name) return '??';
+  const w = name.replace(/^(FC|AC|AS|CF|SC|SK|RC|RB|VfB|VfL|FSV|SV|TSV)\s/i, '').split(/\s+/);
+  if (w.length >= 2) return (w[0].slice(0, 2) + w[1][0]).toUpperCase();
+  return name.slice(0, 3).toUpperCase();
+}
+
+const CREST_COLORS = [
+  '#ef0107','#c8102e','#6cabdd','#003087','#a50044','#dc052d',
+  '#8b0000','#004170','#1d6fa4','#cb3524','#003399','#e4000f',
+  '#00529f','#d4001a','#e8192c','#1b458f'
+];
+function crestColor(id) {
+  return CREST_COLORS[Math.abs(parseInt(id) || 0) % CREST_COLORS.length];
+}
+
+function dayLabel(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return '—';
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return days[d.getDay()];
+}
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return '—';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function fmtTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d)) return '';
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function isLive(status) {
+  return status && ['live','in_progress','inprogress','ongoing'].includes(status.toLowerCase());
+}
+
+function isFinished(status) {
+  return status && ['finished','completed','done','ft','full_time'].includes(status.toLowerCase());
+}
+
+function posClass(pos) {
+  if (!pos) return '';
+  const p = pos.toUpperCase();
+  if (p === 'GK' || p === 'GOALKEEPER') return 'pos-GK-sm';
+  if (['CB','LB','RB','LWB','RWB','DF','DEF','DEFENDER'].includes(p)) return 'pos-DEF-sm';
+  if (['CM','CDM','CAM','LM','RM','MF','MID','MIDFIELDER'].includes(p)) return 'pos-MID-sm';
+  return 'pos-FWD-sm';
+}
+
+function posShort(pos) {
+  if (!pos) return '—';
+  const p = pos.toUpperCase();
+  if (p === 'GOALKEEPER') return 'GK';
+  if (['DEFENDER','CENTRE-BACK'].includes(p)) return 'DF';
+  if (['MIDFIELDER','MIDFIELD'].includes(p)) return 'MF';
+  if (['FORWARD','STRIKER','WINGER'].includes(p)) return 'FW';
+  return p.slice(0, 2);
+}
+
+function managerInitials(name) {
+  if (!name) return '—';
+  const w = name.split(' ');
+  return w.length >= 2 ? (w[0][0] + w[w.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
+}
+
+function saveFavs() {
+  localStorage.setItem('favTeams', JSON.stringify([...favTeamIds]));
+}
+
+/* ══════════════════════════════════════════
+   API Fetch
+══════════════════════════════════════════ */
+async function safeFetch(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return [];
+    const data = await r.json();
+    return Array.isArray(data) ? data : (data ? [data] : []);
+  } catch {
+    return [];
+  }
+}
+
+async function init() {
+  const [teams, matches, players] = await Promise.all([
+    safeFetch('/teams'),
+    safeFetch('/matches'),
+    safeFetch('/players')
+  ]);
+
+  allTeams = teams;
+  allMatches = matches;
+  allPlayers = players;
+  teamsMap = Object.fromEntries(allTeams.map(t => [String(t.team_id), t]));
+
+  renderMatchesView();
+  renderTeamsView();
+  renderSquadTeamSelect();
+}
+
+/* ══════════════════════════════════════════
+   MATCHES VIEW
+══════════════════════════════════════════ */
+function renderMatchesView() {
+  renderFeaturedGrid();
+  renderFixtures();
+}
+
+function renderFeaturedGrid() {
+  const grid = document.getElementById('featured-grid');
+  const featured = allMatches.slice(0, 4);
+
+  if (featured.length === 0) {
+    grid.innerHTML = '<div class="fc-empty">No matches scheduled this week.</div>';
+    return;
+  }
+
+  grid.innerHTML = featured.map((m, i) => {
+    const home = teamsMap[String(m.home_team_id)] || {};
+    const away = teamsMap[String(m.away_team_id)] || {};
+    const live = isLive(m.status);
+    const finished = isFinished(m.status);
+    const homeAbbr = abbr(home.team_name || `T${m.home_team_id}`);
+    const awayAbbr = abbr(away.team_name || `T${m.away_team_id}`);
+    const homeColor = crestColor(m.home_team_id);
+    const awayColor = crestColor(m.away_team_id);
+    const homeName = home.team_name || `Team ${m.home_team_id}`;
+    const awayName = away.team_name || `Team ${m.away_team_id}`;
+    const league = home.league || away.league || 'League';
+    const stadium = home.stadium || '—';
+
+    let badgeHtml, timeHtml;
+    if (live) {
+      badgeHtml = `<span class="badge badge-live">Live</span>`;
+      timeHtml = `<span class="fc-time t-live">Live</span>`;
+    } else if (finished) {
+      badgeHtml = `<span class="badge badge-finished">FT</span>`;
+      timeHtml = `<span class="fc-time">${fmtDate(m.match_date)}</span>`;
+    } else {
+      badgeHtml = `<span class="badge badge-upcoming">${dayLabel(m.match_date)}</span>`;
+      const t = fmtTime(m.match_date);
+      timeHtml = `<span class="fc-time">${t || fmtDate(m.match_date)}</span>`;
+    }
+
+    const showScore = live || finished;
+    const homeScore = showScore ? (m.home_score ?? '—') : '—';
+    const awayScore = showScore ? (m.away_score ?? '—') : '—';
+
+    return `
+      <div class="featured-card ${live ? 's-live' : finished ? 's-finished' : 's-upcoming'} fade-up" style="animation-delay:${i * 80}ms">
+        <div class="fc-header">
+          <span class="fc-league">${league}</span>
+          ${badgeHtml}
+        </div>
+        <div class="fc-team-row">
+          <div class="fc-crest" style="background:${homeColor}">${homeAbbr}</div>
+          <span class="fc-team-name">${homeName}</span>
+          ${showScore ? `<span class="fc-score">${homeScore}</span>` : `<span class="fc-dash">—</span>`}
+        </div>
+        <div class="fc-team-row">
+          <div class="fc-crest" style="background:${awayColor}">${awayAbbr}</div>
+          <span class="fc-team-name">${awayName}</span>
+          ${showScore ? `<span class="fc-score">${awayScore}</span>` : `<span class="fc-dash">—</span>`}
+        </div>
+        <div class="fc-footer">
+          ${timeHtml}
+          <span class="fc-venue">${stadium}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderFixtures() {
+  const table = document.getElementById('fixtures-table');
+  const upcoming = allMatches
+    .filter(m => !isLive(m.status) && !isFinished(m.status))
+    .slice(0, 6);
+
+  const head = `<div class="fx-head"><span>Date</span><span>Match</span><span>League</span><span>Tickets</span></div>`;
+
+  if (upcoming.length === 0) {
+    table.innerHTML = head + '<div class="fx-loading">No upcoming fixtures found.</div>';
+    return;
+  }
+
+  const rows = upcoming.map((m, i) => {
+    const home = teamsMap[String(m.home_team_id)] || {};
+    const away = teamsMap[String(m.away_team_id)] || {};
+    const homeName = home.team_name || `Team ${m.home_team_id}`;
+    const awayName = away.team_name || `Team ${m.away_team_id}`;
+    const league = home.league || away.league || '—';
+    return `
+      <div class="fx-row fade-up" style="animation-delay:${i * 60}ms">
+        <span class="fx-date">${fmtDate(m.match_date)}</span>
+        <span class="fx-match">${homeName} vs ${awayName}</span>
+        <span class="fx-league-text">${league}</span>
+        <button class="fx-book">Book</button>
+      </div>`;
+  }).join('');
+
+  table.innerHTML = head + rows;
+}
+
+/* ══════════════════════════════════════════
+   SQUAD VIEW
+══════════════════════════════════════════ */
+function renderSquadTeamSelect() {
+  const sel = document.getElementById('team-select');
+  allTeams.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.team_id;
+    opt.textContent = t.team_name;
+    sel.appendChild(opt);
+  });
+}
+
+function renderSquad(teamId) {
+  const team = teamsMap[String(teamId)] || {};
+  const players = allPlayers.filter(p => String(p.team_id) === String(teamId));
+
+  // Manager card
+  const name = team.team_name || 'Unknown';
+  document.getElementById('manager-name').textContent = `${name} Manager`;
+  document.getElementById('manager-initials').textContent = abbr(name).slice(0, 2);
+
+  playerFiltered = players;
+  playerPage = 1;
+  renderPlayerTable();
+}
+
+function renderPlayerTable() {
+  const table = document.getElementById('player-table');
+  const head = `
+    <div class="pt-head">
+      <span>#</span><span>Name</span><span>Pos</span><span>Stats</span><span>Apps</span><span>Status</span>
+    </div>`;
+
+  const search = document.getElementById('player-search').value.toLowerCase();
+  const filtered = playerFiltered.filter(p =>
+    !search || (p.player_name || '').toLowerCase().includes(search)
+  );
+
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / PLAYERS_PER_PAGE));
+  playerPage = Math.min(playerPage, pages);
+  const slice = filtered.slice((playerPage - 1) * PLAYERS_PER_PAGE, playerPage * PLAYERS_PER_PAGE);
+
+  document.getElementById('player-count').textContent = total;
+
+  if (total === 0) {
+    table.innerHTML = head + '<div class="pt-empty">No players found.</div>';
+    document.getElementById('player-pagination').style.display = 'none';
+    return;
+  }
+
+  const rows = slice.map((p, i) => {
+    const pos = posShort(p.position);
+    const pc = posClass(p.position);
+    const num = p.player_id ? String(p.player_id).padStart(2, '0') : '—';
+    const goals = p.goals ?? 0;
+    const assists = p.assists ?? 0;
+    const apps = p.appearances ?? 0;
+    return `
+      <div class="pt-row fade-up" style="animation-delay:${i * 40}ms">
+        <span class="pt-num">${num}</span>
+        <span class="pt-name">${p.player_name || '—'}</span>
+        <span class="pt-pos ${pc}">${pos}</span>
+        <span class="pt-stats">${goals}G / ${assists}A</span>
+        <span class="pt-cond">${apps}</span>
+        <span class="pt-status status-active">&#9679; Active</span>
+      </div>`;
+  }).join('');
+
+  table.innerHTML = head + rows;
+
+  const pag = document.getElementById('player-pagination');
+  if (pages > 1) {
+    pag.style.display = 'flex';
+    document.getElementById('pg-label').textContent = `Page ${playerPage} of ${pages}`;
+    document.getElementById('pg-prev').disabled = playerPage === 1;
+    document.getElementById('pg-next').disabled = playerPage === pages;
+  } else {
+    pag.style.display = 'none';
+  }
+}
+
+/* ══════════════════════════════════════════
+   TEAMS VIEW
+══════════════════════════════════════════ */
+function renderTeamsView() {
+  renderFavTeams();
+  populateLeagueFilter();
+  applyTeamFilters();
+}
+
+function renderFavTeams() {
+  const row = document.getElementById('fav-teams-row');
+  const favCards = [...favTeamIds].map(id => {
+    const t = teamsMap[String(id)];
+    if (!t) return '';
+    const color = crestColor(t.team_id);
+    const ab = abbr(t.team_name);
+    return `
+      <div class="fav-team-card fade-up">
+        <div class="fav-crest" style="background:${color}">${ab}</div>
+        <div class="fav-info">
+          <div class="fav-name">${t.team_name}</div>
+          <div class="fav-meta">${t.league || ''}</div>
+        </div>
+        <button class="fav-heart active" data-teamid="${t.team_id}" title="Remove favorite">&#9829;</button>
+      </div>`;
+  }).join('');
+
+  row.innerHTML = favCards + `
+    <div class="fav-add-card" id="fav-add-card">
+      <div class="fav-add-icon">+</div>
+      <div class="fav-info"><div class="fav-name" style="color:var(--muted);font-size:12px">Add Team</div></div>
+    </div>`;
+
+  row.querySelectorAll('.fav-heart').forEach(btn => {
+    btn.addEventListener('click', () => {
+      favTeamIds.delete(String(btn.dataset.teamid));
+      saveFavs();
+      renderFavTeams();
+    });
+  });
+}
+
+function populateLeagueFilter() {
+  const sel = document.getElementById('league-filter');
+  const leagues = [...new Set(allTeams.map(t => t.league).filter(Boolean))].sort();
+  leagues.forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l;
+    opt.textContent = l;
+    sel.appendChild(opt);
+  });
+}
+
+function applyTeamFilters() {
+  const search = document.getElementById('team-search').value.toLowerCase();
+  const league = document.getElementById('league-filter').value;
+  const sort = document.getElementById('sort-filter').value;
+
+  let filtered = allTeams.filter(t => {
+    const matchSearch = !search || (t.team_name || '').toLowerCase().includes(search);
+    const matchLeague = !league || t.league === league;
+    return matchSearch && matchLeague;
+  });
+
+  if (sort === 'name-asc') filtered.sort((a, b) => (a.team_name || '').localeCompare(b.team_name || ''));
+  else if (sort === 'name-desc') filtered.sort((a, b) => (b.team_name || '').localeCompare(a.team_name || ''));
+  else if (sort === 'founded') filtered.sort((a, b) => (a.founded_year || 9999) - (b.founded_year || 9999));
+
+  teamFiltered = filtered;
+  teamPage = 1;
+  document.getElementById('teams-count').textContent = filtered.length;
+  renderTeamsTable();
+}
+
+function renderTeamsTable() {
+  const table = document.getElementById('teams-table');
+  const head = `
+    <div class="tt-head">
+      <span>Team</span><span class="tt-league-col">League</span><span>Status</span>
+    </div>`;
+
+  const total = teamFiltered.length;
+  const pages = Math.max(1, Math.ceil(total / TEAMS_PER_PAGE));
+  teamPage = Math.min(teamPage, pages);
+  const slice = teamFiltered.slice((teamPage - 1) * TEAMS_PER_PAGE, teamPage * TEAMS_PER_PAGE);
+
+  if (total === 0) {
+    table.innerHTML = head + '<div class="pt-empty">No teams found.</div>';
+    document.getElementById('teams-pagination').style.display = 'none';
+    return;
+  }
+
+  const rows = slice.map((t, i) => {
+    const color = crestColor(t.team_id);
+    const ab = abbr(t.team_name);
+    const isFav = favTeamIds.has(String(t.team_id));
+    return `
+      <div class="tt-row fade-up" style="animation-delay:${i * 40}ms" data-teamid="${t.team_id}">
+        <div class="tt-team-cell">
+          <div class="tt-crest" style="background:${color}">${ab}</div>
+          <span class="tt-name-text">${t.team_name}</span>
+        </div>
+        <span class="tt-league-col tt-league-val">${t.league || '—'}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="tt-status status-active">&#9679; Active</span>
+          <button class="fav-heart tt-fav ${isFav ? 'active' : ''}" data-teamid="${t.team_id}" title="${isFav ? 'Remove' : 'Favorite'}">&#9829;</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  table.innerHTML = head + rows;
+
+  table.querySelectorAll('.tt-fav').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = String(btn.dataset.teamid);
+      if (favTeamIds.has(id)) {
+        favTeamIds.delete(id);
+        btn.classList.remove('active');
+      } else {
+        favTeamIds.add(id);
+        btn.classList.add('active');
+      }
+      saveFavs();
+      renderFavTeams();
+    });
+  });
+
+  const pag = document.getElementById('teams-pagination');
+  if (pages > 1) {
+    pag.style.display = 'flex';
+    document.getElementById('tpg-label').textContent = `Page ${teamPage} of ${pages} · ${total} teams`;
+    document.getElementById('tpg-prev').disabled = teamPage === 1;
+    document.getElementById('tpg-next').disabled = teamPage === pages;
+  } else {
+    pag.style.display = 'none';
+  }
+}
+
+/* ══════════════════════════════════════════
+   Recovery Bar Animation
+══════════════════════════════════════════ */
+function triggerRecovBars() {
+  setTimeout(() => {
+    document.querySelectorAll('.recov-fill').forEach(bar => bar.classList.add('animate'));
+    document.querySelectorAll('.form-fill').forEach(bar => bar.classList.add('animate'));
+  }, 150);
+}
+
+/* ══════════════════════════════════════════
+   Event Listeners
+══════════════════════════════════════════ */
+
+// Bottom nav
+document.querySelectorAll('.nav-item[data-view]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.view;
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('view-' + target)?.classList.add('active');
+    btn.classList.add('active');
+    if (target === 'squad') triggerRecovBars();
+  });
+});
+
+// Squad sub-tabs
+document.querySelectorAll('.sub-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const panels = { roster: 'panel-roster', injuries: 'panel-injuries', staff: 'panel-staff' };
+    Object.values(panels).forEach(id => document.getElementById(id).style.display = 'none');
+    const panel = panels[tab.dataset.subtab];
+    if (panel) {
+      document.getElementById(panel).style.display = 'block';
+      if (tab.dataset.subtab === 'injuries') triggerRecovBars();
+    }
+  });
+});
+
+// Team selector (squad view)
+document.getElementById('team-select').addEventListener('change', e => {
+  if (e.target.value) renderSquad(e.target.value);
+});
+
+// Player search
+document.getElementById('player-search').addEventListener('input', () => {
+  playerPage = 1;
+  renderPlayerTable();
+});
+
+// Player pagination
+document.getElementById('pg-prev').addEventListener('click', () => { playerPage--; renderPlayerTable(); });
+document.getElementById('pg-next').addEventListener('click', () => { playerPage++; renderPlayerTable(); });
+
+// Team search + filters
+document.getElementById('team-search').addEventListener('input', applyTeamFilters);
+document.getElementById('league-filter').addEventListener('change', applyTeamFilters);
+document.getElementById('sort-filter').addEventListener('change', applyTeamFilters);
+
+// Team pagination
+document.getElementById('tpg-prev').addEventListener('click', () => { teamPage--; renderTeamsTable(); });
+document.getElementById('tpg-next').addEventListener('click', () => { teamPage++; renderTeamsTable(); });
+
+// Add fav button
+document.getElementById('add-fav-btn').addEventListener('click', () => {
+  document.getElementById('team-search').focus();
+});
+
+/* ══════════════════════════════════════════
+   Boot
+══════════════════════════════════════════ */
+init();
+</script>
 </body>
 </html>
