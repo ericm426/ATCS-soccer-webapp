@@ -1,6 +1,6 @@
 // Matches view — competition nav, featured grid, fixtures, and watchlist.
 import { state } from '../state.js';
-import { abbr, crestColor, dayLabel, fmtDate, fmtTime, isLive, isFinished } from '../utils.js';
+import { abbr, crestColor, crestHtml, compName, dayLabel, fmtDate, fmtTime, isLive, isFinished } from '../utils.js';
 
 export function renderMatchesView() {
   renderCompNav();
@@ -24,7 +24,7 @@ function renderCompNav() {
 
   nav.innerHTML = ['All', ...comps].map(name => {
     const active = (name === 'All' && !state.matchesCompetition) || name === state.matchesCompetition;
-    return `<button class="comp-tab${active ? ' active' : ''}" data-comp="${name}">${name}</button>`;
+    return `<button class="comp-tab${active ? ' active' : ''}" data-comp="${name}">${name === 'All' ? 'All' : compName(name)}</button>`;
   }).join('');
 
   nav.querySelectorAll('.comp-tab').forEach(btn => {
@@ -87,10 +87,10 @@ export function renderWatchlist() {
         : `<span class="badge badge-upcoming" style="font-size:9px">${dayLabel(m.match_date)}</span>`;
 
     return `
-      <div class="wl-row">
+      <div class="wl-row" data-matchid="${m.match_id}" style="cursor:pointer">
         <div class="wl-crests">
-          <div class="wl-crest" style="background:${homeColor}">${homeAbbr}</div>
-          <div class="wl-crest" style="background:${awayColor};margin-left:-4px">${awayAbbr}</div>
+          ${crestHtml(home, 26)}
+          ${crestHtml(away, 26)}
         </div>
         <div class="wl-match-info">
           <div class="wl-teams-text">${homeName} vs ${awayName}</div>
@@ -133,7 +133,7 @@ function renderFeaturedGrid() {
     const awayColor = crestColor(m.away_team_id);
     const homeName = home.team_name || `Team ${m.home_team_id}`;
     const awayName = away.team_name || `Team ${m.away_team_id}`;
-    const competition = m.competition || home.league || away.league || 'League';
+    const competition = compName(m.competition || home.league || away.league || 'League');
     const stadium = home.stadium || '—';
     const isBookmarked = state.bookmarkedMatches.has(String(m.match_id));
 
@@ -161,12 +161,12 @@ function renderFeaturedGrid() {
           ${badgeHtml}
         </div>
         <div class="fc-team-row">
-          <div class="fc-crest" style="background:${homeColor}">${homeAbbr}</div>
+          ${crestHtml(home, 30)}
           <span class="fc-team-name">${homeName}</span>
           ${showScore ? `<span class="fc-score">${homeScore}</span>` : `<span class="fc-dash">—</span>`}
         </div>
         <div class="fc-team-row">
-          <div class="fc-crest" style="background:${awayColor}">${awayAbbr}</div>
+          ${crestHtml(away, 30)}
           <span class="fc-team-name">${awayName}</span>
           ${showScore ? `<span class="fc-score">${awayScore}</span>` : `<span class="fc-dash">—</span>`}
         </div>
@@ -202,10 +202,10 @@ function renderFixtures() {
     const away = state.teamsMap[String(m.away_team_id)] || {};
     const homeName = home.team_name || `Team ${m.home_team_id}`;
     const awayName = away.team_name || `Team ${m.away_team_id}`;
-    const competition = m.competition || home.league || '—';
+    const competition = compName(m.competition || home.league || '—');
     const isBookmarked = state.bookmarkedMatches.has(String(m.match_id));
     return `
-      <div class="fx-row fade-up" style="animation-delay:${i * 60}ms">
+      <div class="fx-row fade-up" style="animation-delay:${i * 60}ms;cursor:pointer" data-matchid="${m.match_id}">
         <span class="fx-date">${fmtDate(m.match_date)}</span>
         <span class="fx-match">${homeName} vs ${awayName}</span>
         <span class="fx-league-text">${competition}</span>

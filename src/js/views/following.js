@@ -1,7 +1,7 @@
 // Following view — shows followed teams grid and followed players list.
 import { state, saveFavs, saveFollowedPlayers } from '../state.js';
-import { abbr, crestColor, isFinished } from '../utils.js';
-import { openTeamProfileModal } from '../modal.js';
+import { abbr, crestColor, crestHtml, isFinished } from '../utils.js';
+import { pushPage } from '../router.js';
 
 // Top-level render called on view switch
 export function renderFollowingView() {
@@ -46,7 +46,7 @@ export function renderFollowedTeams() {
     return `
       <div class="fol-team-card" data-teamid="${t.team_id}">
         <div class="fol-team-top">
-          <div class="fol-crest" style="background:${color}">${ab}</div>
+          ${crestHtml(t, 40)}
           <button class="fol-unfollow-team" data-teamid="${t.team_id}" title="Unfollow">✕</button>
         </div>
         <div class="fol-team-name">${escHtml(t.team_name)}</div>
@@ -59,7 +59,7 @@ export function renderFollowedTeams() {
   grid.querySelectorAll('.fol-team-card').forEach(card => {
     card.addEventListener('click', e => {
       if (e.target.closest('.fol-unfollow-team')) return;
-      openTeamProfileModal(card.dataset.teamid);
+      pushPage({ type: 'team', id: card.dataset.teamid });
     });
   });
 
@@ -115,6 +115,13 @@ export function renderFollowedPlayers() {
   }).join('');
 
   container.innerHTML = rowsHtml;
+
+  container.querySelectorAll('.fol-player-row[data-playerid]').forEach(row => {
+    row.addEventListener('click', e => {
+      if (e.target.closest('.fol-unfollow-player')) return;
+      pushPage({ type: 'player', id: row.dataset.playerid });
+    });
+  });
 
   container.querySelectorAll('.fol-unfollow-player').forEach(btn => {
     btn.addEventListener('click', () => {

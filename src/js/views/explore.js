@@ -1,6 +1,6 @@
 // Explore / search view — search across teams, players, matches.
 import { state, saveFavs, saveFollowedPlayers } from '../state.js';
-import { abbr, crestColor, dayLabel, fmtDate, isLive, isFinished, posClass, posShort } from '../utils.js';
+import { abbr, crestColor, crestHtml, dayLabel, fmtDate, isLive, isFinished, posClass, posShort } from '../utils.js';
 
 export function renderExploreResults(raw) {
   const results = document.getElementById('explore-results');
@@ -27,7 +27,7 @@ export function renderExploreResults(raw) {
         const ab = abbr(t.team_name);
         const isFav = state.favTeamIds.has(String(t.team_id));
         return `<div class="explore-result-row" data-teamid="${t.team_id}" style="cursor:pointer">
-          <div style="width:32px;height:32px;border-radius:8px;background:${color};display:grid;place-items:center;font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:800;color:#fff;flex-shrink:0">${ab}</div>
+          ${crestHtml(t, 32)}
           <div class="explore-result-info">
             <div class="explore-result-name">${t.team_name}</div>
             <div class="explore-result-meta">${t.league || ''} · Est. ${t.founded_year || '—'}</div>

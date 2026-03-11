@@ -4,7 +4,8 @@ import { renderExploreResults } from './views/explore.js';
 import { renderLeaguesView } from './views/leagues.js';
 import { renderFollowingView } from './views/following.js';
 import { renderMatchesView } from './views/matches.js';
-import { openAddMatchModal, openTeamProfileModal } from './modal.js';
+import { openAddMatchModal } from './modal.js';
+import { pushPage } from './router.js';
 
 // ── View switcher ────────────────────────────────────────────────────────────
 
@@ -60,19 +61,22 @@ export function setupNav() {
       return;
     }
 
-    const card = e.target.closest('.featured-card[data-hometeamid]');
+    const card = e.target.closest('.featured-card[data-matchid]');
     if (card) {
-      openTeamProfileModal(card.dataset.hometeamid);
+      pushPage({ type: 'match', id: card.dataset.matchid });
     }
   });
 
-  // ── Fixtures table: bookmark button ──────────────────────────────────────
+  // ── Fixtures table: bookmark button, row click ───────────────────────────
   document.getElementById('fixtures-table')?.addEventListener('click', e => {
     const bmBtn = e.target.closest('.bm-btn');
     if (bmBtn) {
       e.stopPropagation();
       toggleBookmark(bmBtn.dataset.matchid);
+      return;
     }
+    const row = e.target.closest('.fx-row[data-matchid]');
+    if (row) pushPage({ type: 'match', id: row.dataset.matchid });
   });
 
   // ── Watchlist: clear all, individual unbookmark ───────────────────────────
@@ -84,9 +88,9 @@ export function setupNav() {
 
   document.getElementById('watchlist-rows')?.addEventListener('click', e => {
     const bmBtn = e.target.closest('.bm-btn');
-    if (bmBtn) {
-      toggleBookmark(bmBtn.dataset.matchid);
-    }
+    if (bmBtn) { toggleBookmark(bmBtn.dataset.matchid); return; }
+    const row = e.target.closest('.wl-row[data-matchid]');
+    if (row) pushPage({ type: 'match', id: row.dataset.matchid });
   });
 
   // ── Following: browse button → switch to leagues ──────────────────────────
@@ -117,7 +121,7 @@ export function setupNav() {
     });
   });
 
-  // Explore result row clicks — team → open team profile
+  // Explore result row clicks — team → full team page, match → match detail
   document.getElementById('explore-results')?.addEventListener('click', e => {
     const bmBtn = e.target.closest('.bm-btn');
     if (bmBtn) { e.stopPropagation(); return; }
@@ -125,9 +129,10 @@ export function setupNav() {
     const folBtn = e.target.closest('.fol-toggle-btn');
     if (folBtn) { e.stopPropagation(); return; } // handled by explore.js delegation
 
-    const row = e.target.closest('.explore-result-row[data-teamid]');
-    if (row) {
-      openTeamProfileModal(row.dataset.teamid);
-    }
+    const teamRow = e.target.closest('.explore-result-row[data-teamid]');
+    if (teamRow) { pushPage({ type: 'team', id: teamRow.dataset.teamid }); return; }
+
+    const matchRow = e.target.closest('.explore-result-row[data-matchid]');
+    if (matchRow) { pushPage({ type: 'match', id: matchRow.dataset.matchid }); }
   });
 }

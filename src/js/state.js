@@ -22,6 +22,10 @@ export const state = {
   allCompetitions: [],
   matchesCompetition: null,
 
+  // Leagues view sub-tab + player sort
+  leagueView: 'standings',
+  leaguePlayerSort: 'appearances',
+
   // Pagination (kept for backward compat, no longer used by active views)
   playerPage: 1,
   playerFiltered: [],

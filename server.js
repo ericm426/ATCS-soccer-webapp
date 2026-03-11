@@ -467,10 +467,192 @@ async function syncCompetition(code) {
     return { competition: competitionName, teams: apiTeamIds.length, matches: matchesData.matches.length };
 }
 
+// ── Match events with player names ─────────────────────────────────────────
+app.get('/matches/:id/events', async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT me.*, p.player_name
+             FROM match_events me
+             LEFT JOIN players p ON p.player_id = me.player_id
+             WHERE me.match_id = $1
+             ORDER BY me.minute ASC`,
+            [req.params.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json([]);
+    }
+});
+
+// ── API-Football proxy: lineups, events, stats ─────────────────────────────
+const _afCache = {};   // matchId → {lineups, events, stats, found}
+const _afPlayerCache = {};  // playerId → { photoUrl, afPlayerId }
+
+async function _afFetch(path) {
+    const key = process.env.API_FOOTBALL_KEY;
+    if (!key) { console.warn('[af] API_FOOTBALL_KEY not set'); return null; }
+    try {
+        const r = await fetch(`https://v3.football.api-sports.io${path}`, {
+            headers: { 'x-apisports-key': key },
+        });
+        if (!r.ok) { console.warn(`[af] ${path} → HTTP ${r.status}`); return null; }
+        return r.json();
+    } catch (e) {
+        console.warn('[af] fetch error:', e.message);
+        return null;
+    }
+}
+
+// ── API-Football connection status check ───────────────────────────────────
+app.get('/api-football/status', async (req, res) => {
+    const key = process.env.API_FOOTBALL_KEY;
+    if (!key) return res.json({ ok: false, error: 'API_FOOTBALL_KEY not set in .env' });
+    try {
+        const r = await fetch('https://v3.football.api-sports.io/status', {
+            headers: { 'x-apisports-key': key },
+        });
+        const body = await r.json();
+        res.json({ ok: r.ok, status: r.status, body });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+app.get('/api-football/match/:matchId', async (req, res) => {
+    const matchId = parseInt(req.params.matchId);
+    const apiKey  = process.env.API_FOOTBALL_KEY;
+    const empty   = { lineups: [], events: [], stats: [], found: false };
+    if (!apiKey) return res.json(empty);
+    if (_afCache[matchId]) return res.json(_afCache[matchId]);
+
+    try {
+        // 1. Get our match + team data
+        const mRes = await pool.query(
+            `SELECT m.*,
+                    ht.team_name AS home_team_name, ht.api_football_id AS home_af_id,
+                    at.team_name AS away_team_name, at.api_football_id AS away_af_id,
+                    m.api_football_id AS fixture_id
+             FROM matches m
+             JOIN teams ht ON ht.team_id = m.home_team_id
+             JOIN teams at ON at.team_id = m.away_team_id
+             WHERE m.match_id = $1`, [matchId]
+        );
+        const match = mRes.rows[0];
+        if (!match) { _afCache[matchId] = empty; return res.json(empty); }
+
+        let fixtureId  = match.fixture_id;
+        let homeAfId   = match.home_af_id;
+        let awayAfId   = match.away_af_id;
+
+        // 2. Resolve API-Football team IDs if missing
+        if (!homeAfId) {
+            const d = await _afFetch(`/teams?search=${encodeURIComponent(match.home_team_name)}`);
+            if (d?.response?.[0]) {
+                homeAfId = d.response[0].team.id;
+                await pool.query('UPDATE teams SET api_football_id=$1 WHERE team_id=$2', [homeAfId, match.home_team_id]);
+            }
+        }
+        if (!awayAfId) {
+            const d = await _afFetch(`/teams?search=${encodeURIComponent(match.away_team_name)}`);
+            if (d?.response?.[0]) {
+                awayAfId = d.response[0].team.id;
+                await pool.query('UPDATE teams SET api_football_id=$1 WHERE team_id=$2', [awayAfId, match.away_team_id]);
+            }
+        }
+
+        // 3. Find the fixture by team + date
+        if (!fixtureId && homeAfId) {
+            const date = new Date(match.match_date).toISOString().split('T')[0];
+            const d    = await _afFetch(`/fixtures?team=${homeAfId}&date=${date}`);
+            const fix  = d?.response?.find(f =>
+                (f.teams.home.id === homeAfId && f.teams.away.id === awayAfId) ||
+                (f.teams.away.id === homeAfId && f.teams.home.id === awayAfId)
+            );
+            if (fix) {
+                fixtureId = fix.fixture.id;
+                await pool.query('UPDATE matches SET api_football_id=$1 WHERE match_id=$2', [fixtureId, matchId]);
+            }
+        }
+
+        if (!fixtureId) { _afCache[matchId] = empty; return res.json(empty); }
+
+        // 4. Fetch lineups, events, stats in parallel
+        const [ld, ed, sd] = await Promise.all([
+            _afFetch(`/fixtures/lineups?fixture=${fixtureId}`),
+            _afFetch(`/fixtures/events?fixture=${fixtureId}`),
+            _afFetch(`/fixtures/statistics?fixture=${fixtureId}`),
+        ]);
+
+        const result = {
+            lineups:   ld?.response || [],
+            events:    ed?.response || [],
+            stats:     sd?.response || [],
+            found:     true,
+            fixtureId,
+        };
+        _afCache[matchId] = result;
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ ...empty, error: err.message });
+    }
+});
+
+// ── API-Football: player photo + ID lookup ─────────────────────────────────
+app.get('/api-football/player/:playerId', async (req, res) => {
+    const playerId = parseInt(req.params.playerId);
+    const apiKey   = process.env.API_FOOTBALL_KEY;
+    const empty    = { photoUrl: null };
+    if (!apiKey) return res.json(empty);
+    if (_afPlayerCache[playerId]) return res.json(_afPlayerCache[playerId]);
+
+    try {
+        const pRes = await pool.query(
+            `SELECT p.*, p.api_football_id as af_player_id,
+                    t.api_football_id as team_af_id
+             FROM players p
+             LEFT JOIN teams t ON t.team_id = p.team_id
+             WHERE p.player_id = $1`, [playerId]
+        );
+        const player = pRes.rows[0];
+        if (!player) { _afPlayerCache[playerId] = empty; return res.json(empty); }
+
+        let afPlayerId = player.af_player_id;
+
+        if (!afPlayerId) {
+            let d = null;
+            if (player.team_af_id) {
+                d = await _afFetch(`/players?search=${encodeURIComponent(player.player_name)}&team=${player.team_af_id}&season=2024`);
+            }
+            if (!d?.response?.[0]) {
+                // fallback: search by name only
+                d = await _afFetch(`/players?search=${encodeURIComponent(player.player_name)}&season=2024`);
+            }
+            if (d?.response?.[0]) {
+                afPlayerId = d.response[0].player.id;
+                await pool.query('UPDATE players SET api_football_id=$1 WHERE player_id=$2', [afPlayerId, playerId]);
+            }
+        }
+
+        if (!afPlayerId) { _afPlayerCache[playerId] = empty; return res.json(empty); }
+
+        const result = {
+            photoUrl:    `https://media.api-sports.io/football/players/${afPlayerId}.png`,
+            afPlayerId,
+        };
+        _afPlayerCache[playerId] = result;
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ ...empty, error: err.message });
+    }
+});
+
 // ── DB migration — add competition column if it doesn't exist yet ──────────
 async function initDb() {
     await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS competition VARCHAR(100)`);
     await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS stage VARCHAR(50)`);
+    await pool.query(`ALTER TABLE teams   ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
+    await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
+    await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
 }
 
 // ── Competitions list endpoint (distinct from matches) ─────────────────────
