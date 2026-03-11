@@ -18,6 +18,10 @@ export const state = {
   currentLeague: null,
   standingsCache: {},
 
+  // Matches view competition filter
+  allCompetitions: [],
+  matchesCompetition: null,
+
   // Pagination (kept for backward compat, no longer used by active views)
   playerPage: 1,
   playerFiltered: [],

@@ -27,18 +27,3 @@ export async function postData(url, body) {
   }
 }
 
-export async function putData(url, body) {
-  try {
-    const r = await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json();
-    if (!r.ok) return { error: data.error || 'Request failed' };
-    return data;
-  } catch {
-    return { error: 'Network error' };
-  }
-}
-

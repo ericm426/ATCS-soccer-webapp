@@ -176,20 +176,28 @@ app.get('/standings/:league', async (req, res) => {
     try {
         const league = req.params.league;
 
-        // 1. Get teams in this league
-        const teamsResult = await pool.query('SELECT * FROM teams WHERE league = $1', [league]);
+        // 1. Get teams — by domestic league name OR by participation in competition matches.
+        //    This handles cup competitions (e.g. CL) where teams keep their domestic league field.
+        const teamsResult = await pool.query(
+            `SELECT DISTINCT t.* FROM teams t
+             WHERE t.league = $1
+                OR t.team_id IN (
+                     SELECT home_team_id FROM matches WHERE competition = $1
+                     UNION
+                     SELECT away_team_id FROM matches WHERE competition = $1
+                   )`,
+            [league]
+        );
         const teams = teamsResult.rows;
         if (teams.length === 0) return res.json([]);
 
-        const teamIds = teams.map(t => t.team_id);
-
-        // 2. Get finished matches for these teams
+        // 2. Get finished matches scoped to this competition
         const matchesResult = await pool.query(
             `SELECT * FROM matches
              WHERE LOWER(status) IN ('finished','completed','ft','full_time','done')
-             AND (home_team_id = ANY($1::int[]) OR away_team_id = ANY($1::int[]))
+             AND competition = $1
              ORDER BY match_date ASC`,
-            [teamIds]
+            [league]
         );
         const matches = matchesResult.rows;
 
@@ -268,4 +276,230 @@ app.get('/standings/:league', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ── Knockout bracket ───────────────────────────────────────────────────────
+const KNOCKOUT_STAGE_ORDER = ['LAST_16', 'QUARTER_FINALS', 'SEMI_FINALS', 'FINAL'];
+const KNOCKOUT_STAGE_LABELS = {
+    LAST_16: 'Round of 16',
+    QUARTER_FINALS: 'Quarter Finals',
+    SEMI_FINALS: 'Semi Finals',
+    FINAL: 'Final',
+};
+
+app.get('/bracket/:competition', async (req, res) => {
+    try {
+        const comp = decodeURIComponent(req.params.competition);
+        const result = await pool.query(
+            `SELECT m.match_id, m.home_team_id, m.away_team_id, m.match_date,
+                    m.home_score, m.away_score, m.status, m.stage,
+                    ht.team_name AS home_team_name,
+                    at.team_name AS away_team_name
+             FROM matches m
+             JOIN teams ht ON ht.team_id = m.home_team_id
+             JOIN teams at ON at.team_id = m.away_team_id
+             WHERE m.competition = $1 AND m.stage = ANY($2::text[])
+             ORDER BY m.match_date ASC`,
+            [comp, KNOCKOUT_STAGE_ORDER]
+        );
+
+        // Group by stage, then pair 2-legged ties by sorted team pair
+        const stages = {};
+        for (const m of result.rows) {
+            if (!stages[m.stage]) stages[m.stage] = {};
+            const tieKey = [m.home_team_id, m.away_team_id].sort((a, b) => a - b).join('-');
+            if (!stages[m.stage][tieKey]) stages[m.stage][tieKey] = [];
+            stages[m.stage][tieKey].push(m);
+        }
+
+        // Shape into ordered array
+        const bracket = KNOCKOUT_STAGE_ORDER
+            .filter(s => stages[s])
+            .map(s => ({
+                stage: s,
+                label: KNOCKOUT_STAGE_LABELS[s],
+                ties: Object.values(stages[s]).map(legs => {
+                    const teamA = legs[0].home_team_id < legs[0].away_team_id ? legs[0].home_team_name : legs[0].away_team_name;
+                    const teamB = legs[0].home_team_id < legs[0].away_team_id ? legs[0].away_team_name : legs[0].home_team_name;
+                    const aggA = legs.reduce((sum, l) => sum + (l.home_team_id < l.away_team_id ? (l.home_score ?? 0) : (l.away_score ?? 0)), 0);
+                    const aggB = legs.reduce((sum, l) => sum + (l.home_team_id < l.away_team_id ? (l.away_score ?? 0) : (l.home_score ?? 0)), 0);
+                    return { teamA, teamB, aggA, aggB, legs, done: legs.every(l => l.status === 'finished') };
+                }),
+            }));
+
+        res.json(bracket);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Football-data.org sync ─────────────────────────────────────────────────
+
+// Domestic leagues: teams get their league field updated + stale cleanup runs
+// Cup competitions: teams keep their domestic league field, no stale cleanup
+const DOMESTIC_COMPETITIONS = new Set(['PL', 'BL1', 'SA', 'FL1', 'PD', 'DED', 'PPL', 'ELC']);
+const SYNC_COMPETITIONS = ['PL', 'BL1', 'SA', 'FL1', 'PD', 'CL']; // order matters — domestics first
+const SYNC_INTERVAL_MS  = 5 * 60 * 1000;
+
+function mapStatus(s) {
+    if (!s) return 'scheduled';
+    const u = s.toUpperCase();
+    if (['IN_PLAY', 'PAUSED', 'HALFTIME'].includes(u)) return 'live';
+    if (['FINISHED', 'AWARDED'].includes(u)) return 'finished';
+    return 'scheduled';
+}
+
+// Rate-limited fetch — stays under the free tier 10 req/min cap
+let _lastCall = 0;
+async function apiFetch(url) {
+    const gap = 7000; // 7 s between calls ≈ 8.5 req/min, safely under 10
+    const wait = gap - (Date.now() - _lastCall);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    _lastCall = Date.now();
+    return fetch(url, { headers: { 'X-Auth-Token': process.env.FOOTBALL_API_KEY } });
+}
+
+async function syncCompetition(code) {
+    const apiKey = process.env.FOOTBALL_API_KEY;
+    if (!apiKey || apiKey === 'your_api_key_here') throw new Error('FOOTBALL_API_KEY not set');
+
+    const base = 'https://api.football-data.org/v4';
+    const isDomestic = DOMESTIC_COMPETITIONS.has(code);
+
+    // ── 1. Teams ──────────────────────────────────────────────────────────────
+    const teamsRes = await apiFetch(`${base}/competitions/${code}/teams`);
+    if (!teamsRes.ok) {
+        const err = await teamsRes.json().catch(() => ({}));
+        throw new Error(err.message || `Teams fetch failed (${teamsRes.status})`);
+    }
+    const teamsData = await teamsRes.json();
+    const competitionName = teamsData.competition?.name || code;
+    const apiTeamIds = teamsData.teams.map(t => t.id);
+
+    for (const t of teamsData.teams) {
+        if (isDomestic) {
+            // Update everything including the league field
+            await pool.query(
+                `INSERT INTO teams (team_id, team_name, league, stadium, founded_year, logo_url)
+                 VALUES ($1,$2,$3,$4,$5,$6)
+                 ON CONFLICT (team_id) DO UPDATE SET
+                   team_name=EXCLUDED.team_name, league=EXCLUDED.league,
+                   stadium=EXCLUDED.stadium, founded_year=EXCLUDED.founded_year, logo_url=EXCLUDED.logo_url`,
+                [t.id, t.name, competitionName, t.venue || null, t.founded || null, t.crest || null]
+            );
+        } else {
+            // Cup competition — insert if new, but don't overwrite domestic league
+            await pool.query(
+                `INSERT INTO teams (team_id, team_name, league, stadium, founded_year, logo_url)
+                 VALUES ($1,$2,$3,$4,$5,$6)
+                 ON CONFLICT (team_id) DO UPDATE SET
+                   team_name=EXCLUDED.team_name,
+                   stadium=EXCLUDED.stadium, founded_year=EXCLUDED.founded_year, logo_url=EXCLUDED.logo_url`,
+                [t.id, t.name, competitionName, t.venue || null, t.founded || null, t.crest || null]
+            );
+        }
+
+        // ── Squad / players ──────────────────────────────────────────────────
+        for (const p of t.squad || []) {
+            await pool.query(
+                `INSERT INTO players (player_id, team_id, player_name, position, nationality, goals, assists, appearances)
+                 VALUES ($1,$2,$3,$4,$5,0,0,0)
+                 ON CONFLICT (player_id) DO UPDATE SET
+                   team_id=EXCLUDED.team_id, player_name=EXCLUDED.player_name,
+                   position=EXCLUDED.position, nationality=EXCLUDED.nationality`,
+                [p.id, t.id, p.name, p.position || null, p.nationality || null]
+            );
+        }
+    }
+
+    // ── Stale cleanup (domestic only) ─────────────────────────────────────────
+    if (isDomestic) {
+        await pool.query(
+            `DELETE FROM players WHERE team_id IN (
+               SELECT team_id FROM teams WHERE league=$1 AND NOT (team_id = ANY($2::int[])))`,
+            [competitionName, apiTeamIds]
+        );
+        await pool.query(
+            `DELETE FROM matches
+             WHERE home_team_id IN (SELECT team_id FROM teams WHERE league=$1 AND NOT (team_id = ANY($2::int[])))
+                OR away_team_id IN (SELECT team_id FROM teams WHERE league=$1 AND NOT (team_id = ANY($2::int[])))`,
+            [competitionName, apiTeamIds]
+        );
+        await pool.query(
+            `DELETE FROM teams WHERE league=$1 AND NOT (team_id = ANY($2::int[]))`,
+            [competitionName, apiTeamIds]
+        );
+    }
+
+    // ── 2. Matches ────────────────────────────────────────────────────────────
+    const matchesRes = await apiFetch(`${base}/competitions/${code}/matches`);
+    if (!matchesRes.ok) {
+        const err = await matchesRes.json().catch(() => ({}));
+        throw new Error(err.message || `Matches fetch failed (${matchesRes.status})`);
+    }
+    const matchesData = await matchesRes.json();
+
+    for (const m of matchesData.matches) {
+        const status = mapStatus(m.status);
+        const homeScore = m.score?.fullTime?.home ?? null;
+        const awayScore = m.score?.fullTime?.away ?? null;
+        await pool.query(
+            `INSERT INTO matches (match_id, home_team_id, away_team_id, match_date, home_score, away_score, status, competition, stage)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             ON CONFLICT (match_id) DO UPDATE SET
+               home_score=EXCLUDED.home_score, away_score=EXCLUDED.away_score,
+               status=EXCLUDED.status, match_date=EXCLUDED.match_date,
+               competition=EXCLUDED.competition, stage=EXCLUDED.stage`,
+            [m.id, m.homeTeam.id, m.awayTeam.id, m.utcDate, homeScore, awayScore, status, competitionName, m.stage || null]
+        );
+    }
+
+    // ── 3. Scorers (goals + assists) ──────────────────────────────────────────
+    const scorersRes = await apiFetch(`${base}/competitions/${code}/scorers?limit=100`);
+    if (scorersRes.ok) {
+        const scorersData = await scorersRes.json();
+        for (const s of scorersData.scorers || []) {
+            await pool.query(
+                `UPDATE players SET goals=$1, assists=$2, appearances=$3 WHERE player_id=$4`,
+                [s.goals || 0, s.assists || 0, s.playedMatches || 0, s.player.id]
+            );
+        }
+    }
+
+    return { competition: competitionName, teams: apiTeamIds.length, matches: matchesData.matches.length };
+}
+
+// ── DB migration — add competition column if it doesn't exist yet ──────────
+async function initDb() {
+    await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS competition VARCHAR(100)`);
+    await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS stage VARCHAR(50)`);
+}
+
+// ── Competitions list endpoint (distinct from matches) ─────────────────────
+app.get('/competitions', async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT DISTINCT competition FROM matches WHERE competition IS NOT NULL ORDER BY competition`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json([]);
+    }
+});
+
+// Auto-sync all configured competitions on startup and on interval
+async function autoSync() {
+    for (const code of SYNC_COMPETITIONS) {
+        try {
+            const result = await syncCompetition(code);
+            console.log(`[sync] ${result.competition}: ${result.teams} teams, ${result.matches} matches`);
+        } catch (err) {
+            console.error(`[sync] ${code} failed:`, err.message);
+        }
+    }
+}
+
+app.listen(PORT, async () => {
+    console.log(`Server running on port ${PORT}`);
+    await initDb();
+    autoSync();
+    setInterval(autoSync, SYNC_INTERVAL_MS);
+});

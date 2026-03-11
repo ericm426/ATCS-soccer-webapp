@@ -2,16 +2,14 @@
 // Callbacks are set by app.js after data is loaded so views re-render on changes.
 
 import { state, saveFavs, saveFollowedPlayers } from './state.js';
-import { postData, putData } from './api.js';
+import { postData } from './api.js';
 import { showToast } from './toast.js';
 import { abbr, crestColor, fmtDate, isFinished } from './utils.js';
 
 let onMatchAdded = null;
-let onMatchUpdated = null;
 
 export function setCallbacks(callbacks) {
-  onMatchAdded   = callbacks.onMatchAdded;
-  onMatchUpdated = callbacks.onMatchUpdated;
+  onMatchAdded = callbacks.onMatchAdded;
 }
 
 // ── Core open/close ──────────────────────────────────────────────────────────
@@ -138,77 +136,6 @@ export function openAddMatchModal() {
     closeModal();
     showToast('Match added!', 'success');
     if (onMatchAdded) onMatchAdded();
-  });
-}
-
-// ── Update Match Score ───────────────────────────────────────────────────────
-
-export function openUpdateScoreModal(matchId) {
-  const m = state.allMatches.find(m => String(m.match_id) === String(matchId));
-  if (!m) return;
-  const home = state.teamsMap[String(m.home_team_id)] || {};
-  const away = state.teamsMap[String(m.away_team_id)] || {};
-
-  openModal(`
-    <div class="modal-header">
-      <span class="modal-title">Update Score</span>
-      <button class="modal-close-btn" id="modal-close">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-match-preview">
-        <span class="modal-team-name">${home.team_name || '?'}</span>
-        <span class="modal-vs">vs</span>
-        <span class="modal-team-name">${away.team_name || '?'}</span>
-      </div>
-      <div class="form-row">
-        <div class="form-group" style="flex:1">
-          <label class="form-label">${home.team_name || 'Home'}</label>
-          <input id="f-home-score" class="form-input" type="number" min="0" value="${m.home_score ?? 0}">
-        </div>
-        <div class="form-group" style="flex:1">
-          <label class="form-label">${away.team_name || 'Away'}</label>
-          <input id="f-away-score" class="form-input" type="number" min="0" value="${m.away_score ?? 0}">
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Status</label>
-        <select id="f-match-status" class="form-input filter-select" style="width:100%">
-          <option value="scheduled" ${m.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
-          <option value="live"      ${m.status === 'live'      ? 'selected' : ''}>Live</option>
-          <option value="finished"  ${m.status === 'finished'  ? 'selected' : ''}>Finished</option>
-        </select>
-      </div>
-      <div id="form-error" class="form-error" style="display:none"></div>
-      <button id="f-submit" class="form-btn">Update Score</button>
-    </div>
-  `);
-
-  document.getElementById('f-submit').addEventListener('click', async () => {
-    const homeScore = parseInt(document.getElementById('f-home-score').value) || 0;
-    const awayScore = parseInt(document.getElementById('f-away-score').value) || 0;
-    const status    = document.getElementById('f-match-status').value;
-
-    const btn = document.getElementById('f-submit');
-    btn.textContent = 'Saving…';
-    btn.disabled = true;
-
-    const result = await putData(`/matches/${matchId}`, { home_score: homeScore, away_score: awayScore, status });
-
-    if (result.error) {
-      showError(result.error);
-      btn.textContent = 'Update Score';
-      btn.disabled = false;
-      return;
-    }
-
-    const idx = state.allMatches.findIndex(m => String(m.match_id) === String(matchId));
-    if (idx >= 0) {
-      state.allMatches[idx] = { ...state.allMatches[idx], home_score: homeScore, away_score: awayScore, status };
-    }
-
-    closeModal();
-    showToast('Score updated!', 'success');
-    if (onMatchUpdated) onMatchUpdated();
   });
 }
 

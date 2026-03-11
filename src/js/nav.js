@@ -4,7 +4,7 @@ import { renderExploreResults } from './views/explore.js';
 import { renderLeaguesView } from './views/leagues.js';
 import { renderFollowingView } from './views/following.js';
 import { renderMatchesView } from './views/matches.js';
-import { openAddMatchModal, openUpdateScoreModal, openTeamProfileModal } from './modal.js';
+import { openAddMatchModal, openTeamProfileModal } from './modal.js';
 
 // ── View switcher ────────────────────────────────────────────────────────────
 
@@ -51,15 +51,8 @@ export function setupNav() {
   // "View All" link → no-op (just stay on matches, could show all in future)
   document.getElementById('all-matches-link')?.addEventListener('click', e => e.preventDefault());
 
-  // ── Featured grid: edit button, bookmark button, card click ──────────────
+  // ── Featured grid: bookmark button, card click ───────────────────────────
   document.getElementById('featured-grid')?.addEventListener('click', e => {
-    const editBtn = e.target.closest('.fc-edit-btn');
-    if (editBtn) {
-      e.stopPropagation();
-      openUpdateScoreModal(editBtn.dataset.matchid);
-      return;
-    }
-
     const bmBtn = e.target.closest('.bm-btn');
     if (bmBtn) {
       e.stopPropagation();

@@ -39,9 +39,12 @@ export function renderLeagueTabs() {
   });
 }
 
+const UCL_NAME = 'UEFA Champions League';
+
 // Fetch standings and render — shows skeleton while loading
 export async function loadAndRenderStandings(league) {
   state.currentLeague = league;
+  const isUCL = league === UCL_NAME;
 
   // Update active tab highlight
   document.querySelectorAll('.league-tab').forEach(btn => {
@@ -50,7 +53,13 @@ export async function loadAndRenderStandings(league) {
 
   // Update label
   const label = document.getElementById('standings-label');
-  if (label) label.textContent = league;
+  if (label) label.textContent = isUCL ? 'UCL League Phase' : league;
+
+  // Toggle legend / bracket visibility
+  const legend = document.getElementById('standings-legend');
+  const bracketSection = document.getElementById('bracket-section');
+  if (legend) legend.style.display = isUCL ? 'none' : '';
+  if (bracketSection) bracketSection.style.display = isUCL ? 'block' : 'none';
 
   // Show skeleton rows while loading
   const table = document.getElementById('standings-table');
@@ -60,26 +69,73 @@ export async function loadAndRenderStandings(league) {
 
   // Check cache first
   if (state.standingsCache[league]) {
-    renderStandingsTable(state.standingsCache[league]);
-    return;
+    renderStandingsTable(state.standingsCache[league], isUCL);
+  } else {
+    try {
+      const r = await fetch(`/standings/${encodeURIComponent(league)}`);
+      if (!r.ok) throw new Error('Failed to load standings');
+      const rows = await r.json();
+      state.standingsCache[league] = rows;
+      renderStandingsTable(rows, isUCL);
+    } catch {
+      if (table) {
+        table.innerHTML = '<div class="st-empty-msg">Could not load standings. Check your connection.</div>';
+      }
+    }
   }
 
+  // Load bracket in parallel for UCL
+  if (isUCL) loadAndRenderBracket(league);
+}
+
+async function loadAndRenderBracket(league) {
+  const container = document.getElementById('bracket-container');
+  if (!container) return;
+  container.innerHTML = '<div class="st-loading" style="padding:16px">Loading bracket…</div>';
+
   try {
-    const r = await fetch(`/standings/${encodeURIComponent(league)}`);
-    if (!r.ok) throw new Error('Failed to load standings');
-    const rows = await r.json();
-    // Cache the result
-    state.standingsCache[league] = rows;
-    renderStandingsTable(rows);
+    const r = await fetch(`/bracket/${encodeURIComponent(league)}`);
+    if (!r.ok) throw new Error();
+    const bracket = await r.json();
+    renderBracket(bracket, container);
   } catch {
-    if (table) {
-      table.innerHTML = '<div class="st-empty-msg">Could not load standings. Check your connection.</div>';
-    }
+    container.innerHTML = '<div class="st-empty-msg">Knockout bracket not yet available.</div>';
   }
 }
 
+function renderBracket(bracket, container) {
+  if (!bracket.length) {
+    container.innerHTML = '<div class="st-empty-msg">Knockout stage not started yet.</div>';
+    return;
+  }
+
+  container.innerHTML = bracket.map(round => `
+    <div class="bracket-round">
+      <div class="bracket-round-label">${escHtml(round.label)}</div>
+      <div class="bracket-ties">
+        ${round.ties.map(tie => {
+          const aWins = tie.done ? (tie.aggA > tie.aggB ? 'winner' : tie.aggB > tie.aggA ? 'loser' : '') : '';
+          const bWins = tie.done ? (tie.aggB > tie.aggA ? 'winner' : tie.aggA > tie.aggB ? 'loser' : '') : '';
+          const scoreHtml = tie.done
+            ? `<span class="bk-agg">${tie.aggA} – ${tie.aggB}</span>`
+            : `<span class="bk-agg bk-agg-pending">vs</span>`;
+          return `
+            <div class="bracket-tie">
+              <div class="bk-team ${aWins}">${escHtml(tie.teamA)}</div>
+              ${scoreHtml}
+              <div class="bk-team ${bWins}">${escHtml(tie.teamB)}</div>
+              ${tie.legs.length > 1 ? `<div class="bk-legs">${tie.legs.map(l =>
+                `<span>${escHtml(l.home_team_name.split(' ')[0])} ${l.home_score ?? '?'}–${l.away_score ?? '?'} ${escHtml(l.away_team_name.split(' ')[0])}</span>`
+              ).join(' · ')}</div>` : ''}
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
 // Render the full standings table from an array of row objects
-export function renderStandingsTable(rows) {
+export function renderStandingsTable(rows, isUCL = false) {
   const table = document.getElementById('standings-table');
   if (!table) return;
 
@@ -93,10 +149,10 @@ export function renderStandingsTable(rows) {
   }
 
   const total = rows.length;
-  // UCL spots = top 4 (or fewer if less than 4 teams)
-  const uclSpots = Math.min(4, Math.floor(total / 2));
-  // Relegation = bottom 3
-  const relStart = total - 3;
+  // UCL: top 8 auto qualify to R16, 9-24 go to playoffs, 25-36 eliminated
+  // Domestic: top 4 UCL, bottom 3 relegated
+  const uclSpots  = isUCL ? 8  : Math.min(4, Math.floor(total / 2));
+  const relStart  = isUCL ? 24 : total - 3;
 
   const headHtml = `
     <div class="st-head">

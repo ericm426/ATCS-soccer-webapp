@@ -1,11 +1,49 @@
-// Matches view — featured grid, fixtures, and watchlist.
+// Matches view — competition nav, featured grid, fixtures, and watchlist.
 import { state } from '../state.js';
 import { abbr, crestColor, dayLabel, fmtDate, fmtTime, isLive, isFinished } from '../utils.js';
 
 export function renderMatchesView() {
+  renderCompNav();
   renderWatchlist();
   renderFeaturedGrid();
   renderFixtures();
+}
+
+// ── Competition nav ───────────────────────────────────────────────────────────
+
+function renderCompNav() {
+  const nav = document.getElementById('matches-comp-nav');
+  if (!nav) return;
+
+  // Use competitions from matches if synced, fall back to leagues from teams table
+  const comps = state.allCompetitions.length > 0
+    ? state.allCompetitions.map(c => c.competition)
+    : state.allLeagues.map(l => l.league);
+
+  if (comps.length === 0) { nav.innerHTML = ''; return; }
+
+  nav.innerHTML = ['All', ...comps].map(name => {
+    const active = (name === 'All' && !state.matchesCompetition) || name === state.matchesCompetition;
+    return `<button class="comp-tab${active ? ' active' : ''}" data-comp="${name}">${name}</button>`;
+  }).join('');
+
+  nav.querySelectorAll('.comp-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.matchesCompetition = btn.dataset.comp === 'All' ? null : btn.dataset.comp;
+      renderMatchesView();
+    });
+  });
+}
+
+function filteredMatches() {
+  if (!state.matchesCompetition) return state.allMatches;
+  return state.allMatches.filter(m => {
+    // Match on competition field if available, otherwise fall back to team league
+    if (m.competition) return m.competition === state.matchesCompetition;
+    const home = state.teamsMap[String(m.home_team_id)];
+    const away = state.teamsMap[String(m.away_team_id)];
+    return home?.league === state.matchesCompetition || away?.league === state.matchesCompetition;
+  });
 }
 
 // ── Watchlist ────────────────────────────────────────────────────────────────
@@ -68,10 +106,19 @@ export function renderWatchlist() {
 
 function renderFeaturedGrid() {
   const grid = document.getElementById('featured-grid');
-  const featured = state.allMatches.slice(0, 4);
+  const all = filteredMatches();
+
+  // Priority: live → soonest upcoming → most recent finished
+  const live     = all.filter(m => isLive(m.status));
+  const upcoming = all.filter(m => !isLive(m.status) && !isFinished(m.status))
+                      .sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
+  const finished = all.filter(m => isFinished(m.status))
+                      .sort((a, b) => new Date(b.match_date) - new Date(a.match_date));
+
+  const featured = [...live, ...upcoming, ...finished].slice(0, 4);
 
   if (featured.length === 0) {
-    grid.innerHTML = '<div class="fc-empty">No matches scheduled this week.</div>';
+    grid.innerHTML = '<div class="fc-empty">No matches found.</div>';
     return;
   }
 
@@ -86,7 +133,7 @@ function renderFeaturedGrid() {
     const awayColor = crestColor(m.away_team_id);
     const homeName = home.team_name || `Team ${m.home_team_id}`;
     const awayName = away.team_name || `Team ${m.away_team_id}`;
-    const league = home.league || away.league || 'League';
+    const competition = m.competition || home.league || away.league || 'League';
     const stadium = home.stadium || '—';
     const isBookmarked = state.bookmarkedMatches.has(String(m.match_id));
 
@@ -110,7 +157,7 @@ function renderFeaturedGrid() {
     return `
       <div class="featured-card ${live ? 's-live' : finished ? 's-finished' : 's-upcoming'} fade-up" data-hometeamid="${m.home_team_id}" data-matchid="${m.match_id}" style="animation-delay:${i * 80}ms;cursor:pointer">
         <div class="fc-header">
-          <span class="fc-league">${league}</span>
+          <span class="fc-league">${competition}</span>
           ${badgeHtml}
         </div>
         <div class="fc-team-row">
@@ -127,7 +174,6 @@ function renderFeaturedGrid() {
           ${timeHtml}
           <div style="display:flex;align-items:center;gap:6px">
             <span class="fc-venue">${stadium}</span>
-            <button class="fc-edit-btn" data-matchid="${m.match_id}" title="Update score">✎</button>
             <button class="bm-btn${isBookmarked ? ' bm-active' : ''}" data-matchid="${m.match_id}" title="Bookmark">🔖</button>
           </div>
         </div>
@@ -139,11 +185,12 @@ function renderFeaturedGrid() {
 
 function renderFixtures() {
   const table = document.getElementById('fixtures-table');
-  const upcoming = state.allMatches
+  const upcoming = filteredMatches()
     .filter(m => !isLive(m.status) && !isFinished(m.status))
-    .slice(0, 6);
+    .sort((a, b) => new Date(a.match_date) - new Date(b.match_date))
+    .slice(0, 10);
 
-  const head = `<div class="fx-head"><span>Date</span><span>Match</span><span>League</span></div>`;
+  const head = `<div class="fx-head"><span>Date</span><span>Match</span><span>Competition</span><span></span></div>`;
 
   if (upcoming.length === 0) {
     table.innerHTML = head + '<div class="fx-loading">No upcoming fixtures found.</div>';
@@ -155,13 +202,14 @@ function renderFixtures() {
     const away = state.teamsMap[String(m.away_team_id)] || {};
     const homeName = home.team_name || `Team ${m.home_team_id}`;
     const awayName = away.team_name || `Team ${m.away_team_id}`;
-    const league = home.league || away.league || '—';
+    const competition = m.competition || home.league || '—';
     const isBookmarked = state.bookmarkedMatches.has(String(m.match_id));
     return `
       <div class="fx-row fade-up" style="animation-delay:${i * 60}ms">
         <span class="fx-date">${fmtDate(m.match_date)}</span>
         <span class="fx-match">${homeName} vs ${awayName}</span>
-        <span class="fx-league-text">${league}</span>
+        <span class="fx-league-text">${competition}</span>
+        <button class="bm-btn${isBookmarked ? ' bm-active' : ''}" data-matchid="${m.match_id}" title="Bookmark">🔖</button>
       </div>`;
   }).join('');
 

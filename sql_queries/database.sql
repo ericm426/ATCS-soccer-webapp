@@ -48,7 +48,8 @@ CREATE TABLE public.matches (
     match_date date,
     home_score integer,
     away_score integer,
-    status character varying(20)
+    status character varying(20),
+    competition character varying(100)
 );
 
 
@@ -163,6 +164,16 @@ ALTER TABLE ONLY public.players
 --
 -- PostgreSQL database dump complete
 --
+
+-- ── Migrations ────────────────────────────────────────────────────────────────
+
+-- 2025-03-11: Added competition and stage columns to matches (stores which cup/league the match belongs to,
+-- e.g. "Premier League", "UEFA Champions League"). Populated automatically by the API sync.
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS competition character varying(100);
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS stage      character varying(50);
+
+-- 2025-03-11: Cleared all seed data before switching to live API data.
+-- TRUNCATE public.match_events, public.matches, public.players, public.teams RESTART IDENTITY CASCADE;
 
 \unrestrict QskVNwBnqE0Y87pDoweWcHuNBQghUSRe43I4yIrYgU4QQ5ZiGCKxKMoxHeLkDoo
 
