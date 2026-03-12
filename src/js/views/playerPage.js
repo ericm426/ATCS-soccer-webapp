@@ -8,6 +8,28 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function _statsGrid(goals, assists, apps) {
+  const g = goals ?? 0, a = assists ?? 0, n = apps ?? 0;
+  return `
+    <div class="pl-stat-card">
+      <div class="pl-stat-val" style="color:var(--accent)">${g}</div>
+      <div class="pl-stat-label">Goals</div>
+    </div>
+    <div class="pl-stat-card">
+      <div class="pl-stat-val" style="color:#64a0ff">${a}</div>
+      <div class="pl-stat-label">Assists</div>
+    </div>
+    <div class="pl-stat-card">
+      <div class="pl-stat-val">${n}</div>
+      <div class="pl-stat-label">Apps</div>
+    </div>
+    ${g > 0 && n > 0 ? `
+    <div class="pl-stat-card">
+      <div class="pl-stat-val" style="color:var(--upcoming)">${(g / n).toFixed(2)}</div>
+      <div class="pl-stat-label">G/Game</div>
+    </div>` : ''}`;
+}
+
 function posColor(pos) {
   if (!pos) return 'var(--muted)';
   const p = pos.toUpperCase();
@@ -65,28 +87,34 @@ export async function renderPlayerPage(playerId) {
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
     </div>` : ''}
 
-    <div class="pl-stats-grid">
-      <div class="pl-stat-card">
-        <div class="pl-stat-val" style="color:var(--accent)">${player.goals ?? 0}</div>
-        <div class="pl-stat-label">Goals</div>
-      </div>
-      <div class="pl-stat-card">
-        <div class="pl-stat-val" style="color:#64a0ff">${player.assists ?? 0}</div>
-        <div class="pl-stat-label">Assists</div>
-      </div>
-      <div class="pl-stat-card">
-        <div class="pl-stat-val">${player.appearances ?? 0}</div>
-        <div class="pl-stat-label">Apps</div>
-      </div>
-      ${(player.goals ?? 0) > 0 && (player.appearances ?? 0) > 0 ? `
-      <div class="pl-stat-card">
-        <div class="pl-stat-val" style="color:var(--upcoming)">${((player.goals / player.appearances) * 90).toFixed(1)}</div>
-        <div class="pl-stat-label">G/90min</div>
-      </div>` : ''}
+    ${(player.ucl_appearances ?? 0) > 0 ? `
+    <div class="pl-stat-tabs" id="pl-stat-tabs">
+      <button class="pl-stat-tab active" data-stattab="league">League</button>
+      <button class="pl-stat-tab" data-stattab="ucl">UCL</button>
+    </div>` : ''}
+
+    <div id="pl-stats-league" class="pl-stats-grid">
+      ${_statsGrid(player.goals, player.assists, player.appearances)}
     </div>
+
+    ${(player.ucl_appearances ?? 0) > 0 ? `
+    <div id="pl-stats-ucl" class="pl-stats-grid" style="display:none">
+      ${_statsGrid(player.ucl_goals, player.ucl_assists, player.ucl_appearances)}
+    </div>` : ''}
 
     <div id="pl-af-section"></div>
   `;
+
+  // Stat tabs (League / UCL)
+  document.getElementById('pl-stat-tabs')?.querySelectorAll('.pl-stat-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pl-stat-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const isUCL = btn.dataset.stattab === 'ucl';
+      document.getElementById('pl-stats-league').style.display = isUCL ? 'none' : '';
+      document.getElementById('pl-stats-ucl').style.display   = isUCL ? '' : 'none';
+    });
+  });
 
   // Wire follow button
   document.getElementById('pl-follow-btn')?.addEventListener('click', () => {

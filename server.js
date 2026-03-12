@@ -457,10 +457,22 @@ async function syncCompetition(code) {
     if (scorersRes.ok) {
         const scorersData = await scorersRes.json();
         for (const s of scorersData.scorers || []) {
-            await pool.query(
-                `UPDATE players SET goals=$1, assists=$2, appearances=$3 WHERE player_id=$4`,
-                [s.goals || 0, s.assists || 0, s.playedMatches || 0, s.player.id]
-            );
+            if (isDomestic) {
+                // Domestic: only update if this is the player's own league (prevents cross-league overwrites)
+                await pool.query(
+                    `UPDATE players SET goals=$1, assists=$2, appearances=$3
+                     WHERE player_id=$4
+                       AND team_id IN (SELECT team_id FROM teams WHERE league=$5)`,
+                    [s.goals || 0, s.assists || 0, s.playedMatches || 0, s.player.id, competitionName]
+                );
+            } else {
+                // Cup (UCL): write to dedicated ucl_* columns
+                await pool.query(
+                    `UPDATE players SET ucl_goals=$1, ucl_assists=$2, ucl_appearances=$3
+                     WHERE player_id=$4`,
+                    [s.goals || 0, s.assists || 0, s.playedMatches || 0, s.player.id]
+                );
+            }
         }
     }
 
@@ -487,6 +499,14 @@ app.get('/matches/:id/events', async (req, res) => {
 // ── API-Football proxy: lineups, events, stats ─────────────────────────────
 const _afCache = {};   // matchId → {lineups, events, stats, found}
 const _afPlayerCache = {};  // playerId → { photoUrl, afPlayerId }
+
+// Strip common suffixes/prefixes so names match API-Football's format
+function _afTeamName(name) {
+    return (name || '')
+        .replace(/\s+(F\.?C\.?|A\.?F\.?C\.?|S\.?C\.?|C\.?F\.?|S\.?S\.?|A\.?S\.?|R\.?C\.?)$/i, '')
+        .replace(/^(R\.?C\.?D\.?|C\.?D\.?|U\.?D\.?|S\.?D\.?|C\.?F\.?|A\.?C\.?|A\.?S\.?|F\.?C\.?|A\.?F\.?C\.?)\s+/i, '')
+        .trim();
+}
 
 async function _afFetch(path) {
     const key = process.env.API_FOOTBALL_KEY;
@@ -546,24 +566,24 @@ app.get('/api-football/match/:matchId', async (req, res) => {
 
         // 2. Resolve API-Football team IDs if missing
         if (!homeAfId) {
-            const d = await _afFetch(`/teams?search=${encodeURIComponent(match.home_team_name)}`);
+            const d = await _afFetch(`/teams?search=${encodeURIComponent(_afTeamName(match.home_team_name))}`);
             if (d?.response?.[0]) {
                 homeAfId = d.response[0].team.id;
                 await pool.query('UPDATE teams SET api_football_id=$1 WHERE team_id=$2', [homeAfId, match.home_team_id]);
             }
         }
         if (!awayAfId) {
-            const d = await _afFetch(`/teams?search=${encodeURIComponent(match.away_team_name)}`);
+            const d = await _afFetch(`/teams?search=${encodeURIComponent(_afTeamName(match.away_team_name))}`);
             if (d?.response?.[0]) {
                 awayAfId = d.response[0].team.id;
                 await pool.query('UPDATE teams SET api_football_id=$1 WHERE team_id=$2', [awayAfId, match.away_team_id]);
             }
         }
 
-        // 3. Find the fixture by team + date
+        // 3. Find the fixture by date (free plan doesn't support team+date, fetch all for the day)
         if (!fixtureId && homeAfId) {
             const date = new Date(match.match_date).toISOString().split('T')[0];
-            const d    = await _afFetch(`/fixtures?team=${homeAfId}&date=${date}`);
+            const d    = await _afFetch(`/fixtures?date=${date}`);
             const fix  = d?.response?.find(f =>
                 (f.teams.home.id === homeAfId && f.teams.away.id === awayAfId) ||
                 (f.teams.away.id === homeAfId && f.teams.home.id === awayAfId)
@@ -608,7 +628,7 @@ app.get('/api-football/player/:playerId', async (req, res) => {
     try {
         const pRes = await pool.query(
             `SELECT p.*, p.api_football_id as af_player_id,
-                    t.api_football_id as team_af_id
+                    t.api_football_id as team_af_id, t.team_name
              FROM players p
              LEFT JOIN teams t ON t.team_id = p.team_id
              WHERE p.player_id = $1`, [playerId]
@@ -616,16 +636,28 @@ app.get('/api-football/player/:playerId', async (req, res) => {
         const player = pRes.rows[0];
         if (!player) { _afPlayerCache[playerId] = empty; return res.json(empty); }
 
-        let afPlayerId = player.af_player_id;
+        let afPlayerId  = player.af_player_id;
+        let teamAfId    = player.team_af_id;
+
+        // Resolve team AF ID if missing (needed for player search)
+        if (!teamAfId && player.team_id) {
+            const td = await _afFetch(`/teams?search=${encodeURIComponent(_afTeamName(player.team_name))}`);
+            if (td?.response?.[0]) {
+                teamAfId = td.response[0].team.id;
+                await pool.query('UPDATE teams SET api_football_id=$1 WHERE team_id=$2', [teamAfId, player.team_id]);
+            }
+        }
 
         if (!afPlayerId) {
+            // API-Football only allows alphanumeric in search — strip accents/diacritics
+            const stripAccents = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const lastName = stripAccents(player.player_name.split(' ').slice(-1)[0]);
             let d = null;
-            if (player.team_af_id) {
-                d = await _afFetch(`/players?search=${encodeURIComponent(player.player_name)}&team=${player.team_af_id}&season=2024`);
+            if (teamAfId) {
+                d = await _afFetch(`/players?search=${encodeURIComponent(lastName)}&team=${teamAfId}&season=2024`);
             }
-            if (!d?.response?.[0]) {
-                // fallback: search by name only
-                d = await _afFetch(`/players?search=${encodeURIComponent(player.player_name)}&season=2024`);
+            if (!d?.response?.[0] && teamAfId) {
+                d = await _afFetch(`/players?search=${encodeURIComponent(lastName)}&team=${teamAfId}&season=2025`);
             }
             if (d?.response?.[0]) {
                 afPlayerId = d.response[0].player.id;
@@ -653,6 +685,9 @@ async function initDb() {
     await pool.query(`ALTER TABLE teams   ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
     await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
     await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
+    await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ucl_goals INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ucl_assists INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ucl_appearances INTEGER DEFAULT 0`);
 }
 
 // ── Competitions list endpoint (distinct from matches) ─────────────────────

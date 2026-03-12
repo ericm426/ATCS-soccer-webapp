@@ -49,9 +49,6 @@ export function setupNav() {
   // FAB — Add Match
   document.getElementById('fab-add-match')?.addEventListener('click', openAddMatchModal);
 
-  // "View All" link → no-op (just stay on matches, could show all in future)
-  document.getElementById('all-matches-link')?.addEventListener('click', e => e.preventDefault());
-
   // ── Featured grid: bookmark button, card click ───────────────────────────
   document.getElementById('featured-grid')?.addEventListener('click', e => {
     const bmBtn = e.target.closest('.bm-btn');
@@ -131,6 +128,9 @@ export function setupNav() {
 
     const teamRow = e.target.closest('.explore-result-row[data-teamid]');
     if (teamRow) { pushPage({ type: 'team', id: teamRow.dataset.teamid }); return; }
+
+    const playerRow = e.target.closest('.explore-result-row[data-playerid]');
+    if (playerRow) { pushPage({ type: 'player', id: playerRow.dataset.playerid }); return; }
 
     const matchRow = e.target.closest('.explore-result-row[data-matchid]');
     if (matchRow) { pushPage({ type: 'match', id: matchRow.dataset.matchid }); }

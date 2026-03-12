@@ -98,8 +98,12 @@ export function renderFollowedPlayers() {
 
   const rowsHtml = followed.map(p => {
     const team = state.teamsMap[String(p.team_id)] || {};
+    const initials = p.player_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
     return `
       <div class="fol-player-row" data-playerid="${p.player_id}">
+        <div class="tp-player-avatar" id="fol-avatar-${p.player_id}">
+          <div class="tp-player-initials">${initials}</div>
+        </div>
         <div class="fol-player-info">
           <div class="fol-player-name">${escHtml(p.player_name)}</div>
           <div class="fol-player-meta">${escHtml(team.team_name || '—')} · ${escHtml(p.nationality || '—')} · ${p.position || '—'}</div>
@@ -115,6 +119,29 @@ export function renderFollowedPlayers() {
   }).join('');
 
   container.innerHTML = rowsHtml;
+
+  // Load player photos async
+  for (const p of followed) {
+    fetch(`/api-football/player/${p.player_id}`)
+      .then(r => r.ok ? r.json() : {})
+      .then(d => {
+        if (!d.photoUrl) return;
+        const wrap = document.getElementById(`fol-avatar-${p.player_id}`);
+        if (!wrap?.isConnected) return;
+        const img = document.createElement('img');
+        img.src = d.photoUrl;
+        img.className = 'tp-player-photo';
+        img.loading = 'lazy';
+        img.onerror = () => img.remove();
+        img.onload = () => {
+          const init = wrap.querySelector('.tp-player-initials');
+          if (init) init.remove();
+          wrap.appendChild(img);
+        };
+        wrap.appendChild(img);
+      })
+      .catch(() => {});
+  }
 
   container.querySelectorAll('.fol-player-row[data-playerid]').forEach(row => {
     row.addEventListener('click', e => {

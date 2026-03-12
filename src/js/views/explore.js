@@ -85,7 +85,7 @@ export function renderExploreResults(raw) {
                      finished ? `<span class="badge badge-finished">FT</span>` :
                      `<span class="badge badge-upcoming">${dayLabel(m.match_date)}</span>`;
         const score = (live || finished) ? `${m.home_score ?? '—'} – ${m.away_score ?? '—'}` : 'vs';
-        return `<div class="explore-result-row">
+        return `<div class="explore-result-row" data-matchid="${m.match_id}" style="cursor:pointer">
           ${badge}
           <div class="explore-result-info">
             <div class="explore-result-name">${home.team_name || '?'} ${score} ${away.team_name || '?'}</div>

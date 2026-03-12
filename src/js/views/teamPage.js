@@ -157,6 +157,9 @@ export async function renderTeamPage(teamId) {
     row.addEventListener('click', () => pushPage({ type: 'match', id: row.dataset.matchid }));
   });
 
+  // Async player photo loading (sequential to avoid rate limits)
+  _loadSquadPhotos(players);
+
   // Standings
   if (team.league) {
     try {
@@ -201,10 +204,12 @@ function _renderSquad(players) {
       <div class="tp-pos-label">${grp}s</div>
       ${list.map(p => {
         const isFollowed = state.followedPlayers.has(String(p.player_id));
-        const pc = posClass(p.position);
+        const initials = p.player_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
         return `
           <div class="tp-squad-row" data-playerid="${p.player_id}" style="cursor:pointer">
-            <span class="pt-pos ${pc}" style="font-size:10px">${posShort(p.position)}</span>
+            <div class="tp-player-avatar" id="tp-avatar-${p.player_id}">
+              <div class="tp-player-initials">${initials}</div>
+            </div>
             <div style="flex:1;min-width:0">
               <div class="tp-squad-name">${escHtml(p.player_name)}</div>
               <div class="tp-squad-meta">${escHtml(p.nationality || '—')}</div>
@@ -217,6 +222,32 @@ function _renderSquad(players) {
       }).join('')}
     </div>`;
   }).join('');
+}
+
+async function _loadSquadPhotos(players) {
+  // Fetch photos sequentially with a small gap to avoid hammering the API
+  for (const p of players) {
+    const wrap = document.getElementById(`tp-avatar-${p.player_id}`);
+    if (!wrap) continue; // panel was closed
+    try {
+      const r = await fetch(`/api-football/player/${p.player_id}`);
+      const d = r.ok ? await r.json() : {};
+      if (d.photoUrl && wrap.isConnected) {
+        const img = document.createElement('img');
+        img.src = d.photoUrl;
+        img.className = 'tp-player-photo';
+        img.loading = 'lazy';
+        img.onerror = () => img.remove();
+        img.onload = () => {
+          const init = wrap.querySelector('.tp-player-initials');
+          if (init) init.remove();
+          wrap.appendChild(img);
+        };
+        wrap.appendChild(img);
+      }
+    } catch { /* ignore */ }
+    await new Promise(r => setTimeout(r, 50)); // small gap between requests
+  }
 }
 
 function _renderStandings(standings, teamId, league) {
