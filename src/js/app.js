@@ -72,8 +72,8 @@ async function init() {
   renderLeagueTabs();
   setCallbacks({ onMatchAdded: renderMatchesView });
 
-  // Poll for fresh data every 60 seconds
-  setInterval(refreshAll, 60_000);
+  // Poll for fresh data every 5 minutes (matches the server sync interval)
+  setInterval(refreshAll, 5 * 60_000);
 }
 
 init();

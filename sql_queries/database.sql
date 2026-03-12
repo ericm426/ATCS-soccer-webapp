@@ -1,179 +1,124 @@
---
--- PostgreSQL database dump
---
+-- ══════════════════════════════════════════════════════════════════════════════
+-- OmniTrack Soccer App — Full Database Schema
+-- PostgreSQL 16
+-- ══════════════════════════════════════════════════════════════════════════════
 
-\restrict QskVNwBnqE0Y87pDoweWcHuNBQghUSRe43I4yIrYgU4QQ5ZiGCKxKMoxHeLkDoo
-
--- Dumped from database version 16.11 (Ubuntu 16.11-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.11 (Ubuntu 16.11-0ubuntu0.24.04.1)
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
---
--- Name: match_events; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.match_events (
-    event_id integer NOT NULL,
-    match_id integer,
-    player_id integer,
-    event_type character varying(30),
-    minute integer
-);
-
-
-ALTER TABLE public.match_events OWNER TO postgres;
-
---
--- Name: matches; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.matches (
-    match_id integer NOT NULL,
-    home_team_id integer,
-    away_team_id integer,
-    match_date date,
-    home_score integer,
-    away_score integer,
-    status character varying(20),
-    competition character varying(100)
-);
-
-
-ALTER TABLE public.matches OWNER TO postgres;
-
---
--- Name: players; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.players (
-    player_id integer NOT NULL,
-    team_id integer,
-    player_name character varying(255),
-    "position" character varying,
-    goals integer,
-    assists integer,
-    appearances integer,
-    nationality character varying(100)
-);
-
-
-ALTER TABLE public.players OWNER TO postgres;
-
---
--- Name: teams; Type: TABLE; Schema: public; Owner: postgres
---
+-- ── Tables ────────────────────────────────────────────────────────────────────
 
 CREATE TABLE public.teams (
-    team_id integer NOT NULL,
-    team_name character varying(100),
-    league character varying(100),
-    stadium character varying(100),
-    founded_year integer,
-    logo_url character varying(255)
+    team_id         INTEGER         NOT NULL,
+    team_name       VARCHAR(100),
+    league          VARCHAR(100),           -- domestic league name (e.g. "Premier League")
+    stadium         VARCHAR(100),
+    founded_year    INTEGER,
+    logo_url        VARCHAR(255),
+    api_football_id INTEGER,                -- v3.football.api-sports.io team ID (cached)
+    CONSTRAINT teams_pkey PRIMARY KEY (team_id)
 );
 
+CREATE TABLE public.players (
+    player_id           INTEGER         NOT NULL,
+    team_id             INTEGER,
+    player_name         VARCHAR(255),
+    position            VARCHAR(100),
+    nationality         VARCHAR(100),
+    goals               INTEGER DEFAULT 0,  -- domestic league goals
+    assists             INTEGER DEFAULT 0,  -- domestic league assists
+    appearances         INTEGER DEFAULT 0,  -- domestic league appearances
+    ucl_goals           INTEGER DEFAULT 0,  -- UEFA Champions League goals
+    ucl_assists         INTEGER DEFAULT 0,  -- UEFA Champions League assists
+    ucl_appearances     INTEGER DEFAULT 0,  -- UEFA Champions League appearances
+    api_football_id     INTEGER,            -- v3.football.api-sports.io player ID (cached)
+    CONSTRAINT players_pkey PRIMARY KEY (player_id),
+    CONSTRAINT players_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(team_id)
+);
 
-ALTER TABLE public.teams OWNER TO postgres;
+CREATE TABLE public.matches (
+    match_id        INTEGER         NOT NULL,
+    home_team_id    INTEGER,
+    away_team_id    INTEGER,
+    match_date      TIMESTAMP WITH TIME ZONE,
+    home_score      INTEGER,
+    away_score      INTEGER,
+    status          VARCHAR(20),            -- e.g. "scheduled", "finished", "live"
+    competition     VARCHAR(100),           -- competition name (e.g. "Premier League", "UEFA Champions League")
+    stage           VARCHAR(50),            -- e.g. "REGULAR_SEASON", "LAST_16", "QUARTER_FINALS"
+    api_football_id INTEGER,                -- v3.football.api-sports.io fixture ID (cached)
+    CONSTRAINT matches_pkey PRIMARY KEY (match_id),
+    CONSTRAINT matches_home_team_id_fkey FOREIGN KEY (home_team_id) REFERENCES public.teams(team_id),
+    CONSTRAINT matches_away_team_id_fkey FOREIGN KEY (away_team_id) REFERENCES public.teams(team_id)
+);
 
---
--- Name: match_events match_events_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
+CREATE TABLE public.match_events (
+    event_id    INTEGER         NOT NULL,
+    match_id    INTEGER,
+    player_id   INTEGER,
+    event_type  VARCHAR(30),               -- e.g. "goal", "yellow_card", "red_card", "substitution"
+    minute      INTEGER,
+    CONSTRAINT match_events_pkey PRIMARY KEY (event_id),
+    CONSTRAINT match_events_match_id_fkey  FOREIGN KEY (match_id)  REFERENCES public.matches(match_id),
+    CONSTRAINT match_events_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.players(player_id)
+);
 
-ALTER TABLE ONLY public.match_events
-    ADD CONSTRAINT match_events_pkey PRIMARY KEY (event_id);
+-- ── Indexes ───────────────────────────────────────────────────────────────────
 
+CREATE INDEX IF NOT EXISTS idx_players_team_id   ON public.players (team_id);
+CREATE INDEX IF NOT EXISTS idx_matches_home_team  ON public.matches  (home_team_id);
+CREATE INDEX IF NOT EXISTS idx_matches_away_team  ON public.matches  (away_team_id);
+CREATE INDEX IF NOT EXISTS idx_matches_date       ON public.matches  (match_date);
+CREATE INDEX IF NOT EXISTS idx_match_events_match ON public.match_events (match_id);
 
---
--- Name: matches matches_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
+-- ── Migration history (ALTER TABLE statements applied to existing DB) ─────────
 
-ALTER TABLE ONLY public.matches
-    ADD CONSTRAINT matches_pkey PRIMARY KEY (match_id);
+-- 2026-03-11: Added competition and stage columns to matches
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS competition     VARCHAR(100);
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS stage           VARCHAR(50);
 
+-- 2026-03-11: Added API-Football ID caching columns for cross-referencing v3.football.api-sports.io
+ALTER TABLE public.teams   ADD COLUMN IF NOT EXISTS api_football_id INTEGER;
+ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS api_football_id INTEGER;
+ALTER TABLE public.players ADD COLUMN IF NOT EXISTS api_football_id INTEGER;
 
---
--- Name: players players_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
+-- 2026-03-11: Added separate UCL stats columns so domestic and Champions League
+--             stats are stored independently (prevents CL scorers sync from overwriting
+--             a player's domestic league goals/assists/appearances)
+ALTER TABLE public.players ADD COLUMN IF NOT EXISTS ucl_goals       INTEGER DEFAULT 0;
+ALTER TABLE public.players ADD COLUMN IF NOT EXISTS ucl_assists     INTEGER DEFAULT 0;
+ALTER TABLE public.players ADD COLUMN IF NOT EXISTS ucl_appearances INTEGER DEFAULT 0;
 
-ALTER TABLE ONLY public.players
-    ADD CONSTRAINT players_pkey PRIMARY KEY (player_id);
+-- ── Fantasy tables (created by initDb() on first server start) ────────────────
+-- User-created teams, rosters, matches, and match events for the Fantasy feature.
+-- SERIAL primary keys (auto-increment) so users don't supply IDs.
+-- ON DELETE CASCADE ensures deleting a team cleans up all its players and matches.
 
+CREATE TABLE IF NOT EXISTS public.fantasy_teams (
+    team_id     SERIAL          PRIMARY KEY,
+    name        VARCHAR(100)    NOT NULL
+);
 
---
--- Name: teams teams_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
+CREATE TABLE IF NOT EXISTS public.fantasy_players (
+    player_id       SERIAL      PRIMARY KEY,
+    fantasy_team_id INTEGER     REFERENCES public.fantasy_teams(team_id) ON DELETE CASCADE,
+    name            VARCHAR(255) NOT NULL,
+    position        VARCHAR(50),
+    goals           INTEGER     DEFAULT 0,
+    assists         INTEGER     DEFAULT 0
+);
 
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT teams_pkey PRIMARY KEY (team_id);
+CREATE TABLE IF NOT EXISTS public.fantasy_matches (
+    match_id     SERIAL      PRIMARY KEY,
+    home_team_id INTEGER     REFERENCES public.fantasy_teams(team_id) ON DELETE CASCADE,
+    away_team_id INTEGER     REFERENCES public.fantasy_teams(team_id) ON DELETE CASCADE,
+    match_date   DATE,
+    home_score   INTEGER     DEFAULT 0,
+    away_score   INTEGER     DEFAULT 0,
+    status       VARCHAR(20) DEFAULT 'scheduled'
+);
 
-
---
--- Name: match_events match_events_match_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.match_events
-    ADD CONSTRAINT match_events_match_id_fkey FOREIGN KEY (match_id) REFERENCES public.matches(match_id);
-
-
---
--- Name: match_events match_events_player_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.match_events
-    ADD CONSTRAINT match_events_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.players(player_id);
-
-
---
--- Name: matches matches_away_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.matches
-    ADD CONSTRAINT matches_away_team_id_fkey FOREIGN KEY (away_team_id) REFERENCES public.teams(team_id);
-
-
---
--- Name: matches matches_home_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.matches
-    ADD CONSTRAINT matches_home_team_id_fkey FOREIGN KEY (home_team_id) REFERENCES public.teams(team_id);
-
-
---
--- Name: players players_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.players
-    ADD CONSTRAINT players_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(team_id);
-
-
---
--- PostgreSQL database dump complete
---
-
--- ── Migrations ────────────────────────────────────────────────────────────────
-
--- 2025-03-11: Added competition and stage columns to matches (stores which cup/league the match belongs to,
--- e.g. "Premier League", "UEFA Champions League"). Populated automatically by the API sync.
-ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS competition character varying(100);
-ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS stage      character varying(50);
-
--- 2025-03-11: Cleared all seed data before switching to live API data.
--- TRUNCATE public.match_events, public.matches, public.players, public.teams RESTART IDENTITY CASCADE;
-
-\unrestrict QskVNwBnqE0Y87pDoweWcHuNBQghUSRe43I4yIrYgU4QQ5ZiGCKxKMoxHeLkDoo
-
+CREATE TABLE IF NOT EXISTS public.fantasy_match_events (
+    event_id          SERIAL  PRIMARY KEY,
+    fantasy_match_id  INTEGER REFERENCES public.fantasy_matches(match_id) ON DELETE CASCADE,
+    fantasy_player_id INTEGER REFERENCES public.fantasy_players(player_id) ON DELETE SET NULL,
+    event_type        VARCHAR(30),
+    minute            INTEGER
+);

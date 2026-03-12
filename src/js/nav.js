@@ -4,6 +4,7 @@ import { renderExploreResults } from './views/explore.js';
 import { renderLeaguesView } from './views/leagues.js';
 import { renderFollowingView } from './views/following.js';
 import { renderMatchesView } from './views/matches.js';
+import { renderFantasyView } from './views/fantasy.js';
 import { openAddMatchModal } from './modal.js';
 import { pushPage } from './router.js';
 
@@ -15,13 +16,14 @@ export function switchToView(target) {
   document.getElementById('view-' + target)?.classList.add('active');
   document.querySelector(`.nav-item[data-view="${target}"]`)?.classList.add('active');
 
-  // Show the Add Match FAB only on Matches view
+  // Show the Add Match FAB only on the Matches view
   const fab = document.getElementById('fab-add-match');
   if (fab) fab.style.display = target === 'matches' ? 'grid' : 'none';
 
   // Lazy-render views when first visited
-  if (target === 'leagues') renderLeaguesView();
+  if (target === 'leagues')  renderLeaguesView();
   if (target === 'following') renderFollowingView();
+  if (target === 'fantasy')  renderFantasyView();
   if (target === 'explore') setTimeout(() => document.getElementById('explore-input')?.focus(), 50);
 }
 

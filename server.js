@@ -127,6 +127,30 @@ app.post('/matches', async (req, res) => {
     }
 });
 
+// ── Matches: update score and status ──────────────────────────────────────
+app.put('/matches/:id', async (req, res) => {
+    try {
+        const { home_score, away_score, status } = req.body;
+        const result = await pool.query(
+            'UPDATE matches SET home_score=$1, away_score=$2, status=$3 WHERE match_id=$4 RETURNING *',
+            [home_score, away_score, status, req.params.id]
+        );
+        res.json(result.rows[0] || null);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Players: delete ────────────────────────────────────────────────────────
+app.delete('/players/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM players WHERE player_id=$1', [req.params.id]);
+        res.status(204).end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── Match Events ───────────────────────────────────────────────────────────
 app.get('/match_events', async (req, res) => {
     try {
@@ -301,7 +325,9 @@ app.get('/bracket/:competition', async (req, res) => {
             [comp, KNOCKOUT_STAGE_ORDER]
         );
 
-        // Group by stage, then pair 2-legged ties by sorted team pair
+        // Group matches by stage, then pair home+away legs of the same tie.
+        // Ties are keyed by the sorted pair of team IDs so both legs share a key
+        // regardless of which team was home in which leg.
         const stages = {};
         for (const m of result.rows) {
             if (!stages[m.stage]) stages[m.stage] = {};
@@ -347,10 +373,13 @@ function mapStatus(s) {
     return 'scheduled';
 }
 
-// Rate-limited fetch — stays under the free tier 10 req/min cap
+// Rate-limited fetch — stays under the free tier 10 req/min cap.
+// Enforces a minimum 7-second gap between consecutive API calls by
+// recording the timestamp of the last call and sleeping for any remaining
+// gap before the next one. This keeps us at ~8.5 req/min (safely under 10).
 let _lastCall = 0;
 async function apiFetch(url) {
-    const gap = 7000; // 7 s between calls ≈ 8.5 req/min, safely under 10
+    const gap = 7000;
     const wait = gap - (Date.now() - _lastCall);
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
     _lastCall = Date.now();
@@ -411,6 +440,9 @@ async function syncCompetition(code) {
     }
 
     // ── Stale cleanup (domestic only) ─────────────────────────────────────────
+    // Remove any players/matches/teams from this league that are no longer
+    // in the API response (e.g. relegated/promoted clubs). Cup competitions
+    // like the UCL are skipped — those teams keep their domestic league row.
     if (isDomestic) {
         await pool.query(
             `DELETE FROM players WHERE team_id IN (
@@ -580,7 +612,10 @@ app.get('/api-football/match/:matchId', async (req, res) => {
             }
         }
 
-        // 3. Find the fixture by date (free plan doesn't support team+date, fetch all for the day)
+        // 3. Find the fixture by date.
+        //    API-Football free plan doesn't allow filtering by both team+date simultaneously —
+        //    it requires a paid season param. Instead we fetch all fixtures for the day (~250)
+        //    and match by home/away team ID pairs in JavaScript.
         if (!fixtureId && homeAfId) {
             const date = new Date(match.match_date).toISOString().split('T')[0];
             const d    = await _afFetch(`/fixtures?date=${date}`);
@@ -678,16 +713,195 @@ app.get('/api-football/player/:playerId', async (req, res) => {
     }
 });
 
+// ── Fantasy Teams ──────────────────────────────────────────────────────────
+app.get('/fantasy/teams', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM fantasy_teams ORDER BY team_id');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json([]);
+    }
+});
+
+app.post('/fantasy/teams', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const result = await pool.query(
+            'INSERT INTO fantasy_teams (name) VALUES ($1) RETURNING *',
+            [name]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/fantasy/teams/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM fantasy_teams WHERE team_id=$1', [req.params.id]);
+        res.status(204).end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Fantasy Players ────────────────────────────────────────────────────────
+app.get('/fantasy/teams/:id/players', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT * FROM fantasy_players WHERE fantasy_team_id=$1 ORDER BY player_id',
+            [req.params.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json([]);
+    }
+});
+
+app.post('/fantasy/players', async (req, res) => {
+    try {
+        const { fantasy_team_id, name, position } = req.body;
+        const result = await pool.query(
+            'INSERT INTO fantasy_players (fantasy_team_id, name, position) VALUES ($1,$2,$3) RETURNING *',
+            [fantasy_team_id, name, position || null]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/fantasy/players/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM fantasy_players WHERE player_id=$1', [req.params.id]);
+        res.status(204).end();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Fantasy Matches ────────────────────────────────────────────────────────
+app.get('/fantasy/matches', async (req, res) => {
+    try {
+        // Join team names so the frontend doesn't need a separate lookup
+        const result = await pool.query(`
+            SELECT fm.*,
+                   ht.name AS home_team_name,
+                   at.name AS away_team_name
+            FROM fantasy_matches fm
+            LEFT JOIN fantasy_teams ht ON ht.team_id = fm.home_team_id
+            LEFT JOIN fantasy_teams at ON at.team_id = fm.away_team_id
+            ORDER BY fm.match_id DESC`
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json([]);
+    }
+});
+
+app.post('/fantasy/matches', async (req, res) => {
+    try {
+        const { home_team_id, away_team_id, match_date } = req.body;
+        const result = await pool.query(
+            `INSERT INTO fantasy_matches (home_team_id, away_team_id, match_date, home_score, away_score, status)
+             VALUES ($1,$2,$3,0,0,'scheduled') RETURNING *`,
+            [home_team_id, away_team_id, match_date || null]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/fantasy/matches/:id', async (req, res) => {
+    try {
+        const { home_score, away_score, status } = req.body;
+        const result = await pool.query(
+            'UPDATE fantasy_matches SET home_score=$1, away_score=$2, status=$3 WHERE match_id=$4 RETURNING *',
+            [home_score, away_score, status, req.params.id]
+        );
+        res.json(result.rows[0] || null);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Fantasy Match Events ───────────────────────────────────────────────────
+app.get('/fantasy/matches/:id/events', async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT fme.*, fp.name AS player_name
+             FROM fantasy_match_events fme
+             LEFT JOIN fantasy_players fp ON fp.player_id = fme.fantasy_player_id
+             WHERE fme.fantasy_match_id=$1
+             ORDER BY fme.minute ASC`,
+            [req.params.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json([]);
+    }
+});
+
+app.post('/fantasy/match_events', async (req, res) => {
+    try {
+        const { fantasy_match_id, fantasy_player_id, event_type, minute } = req.body;
+        const result = await pool.query(
+            'INSERT INTO fantasy_match_events (fantasy_match_id, fantasy_player_id, event_type, minute) VALUES ($1,$2,$3,$4) RETURNING *',
+            [fantasy_match_id, fantasy_player_id || null, event_type, minute || null]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── DB migration — add competition column if it doesn't exist yet ──────────
 async function initDb() {
+    // Core schema migrations for real match data
     await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS competition VARCHAR(100)`);
     await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS stage VARCHAR(50)`);
     await pool.query(`ALTER TABLE teams   ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
     await pool.query(`ALTER TABLE matches ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
     await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS api_football_id INTEGER`);
+    // Separate UCL stat columns so Champions League sync doesn't overwrite domestic goals/assists
     await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ucl_goals INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ucl_assists INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS ucl_appearances INTEGER DEFAULT 0`);
+
+    // Fantasy mode — user-created teams, players, matches, and events
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS fantasy_teams (
+            team_id SERIAL PRIMARY KEY,
+            name    VARCHAR(100) NOT NULL
+        )`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS fantasy_players (
+            player_id       SERIAL PRIMARY KEY,
+            fantasy_team_id INTEGER REFERENCES fantasy_teams(team_id) ON DELETE CASCADE,
+            name            VARCHAR(255) NOT NULL,
+            position        VARCHAR(50),
+            goals           INTEGER DEFAULT 0,
+            assists         INTEGER DEFAULT 0
+        )`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS fantasy_matches (
+            match_id     SERIAL PRIMARY KEY,
+            home_team_id INTEGER REFERENCES fantasy_teams(team_id) ON DELETE CASCADE,
+            away_team_id INTEGER REFERENCES fantasy_teams(team_id) ON DELETE CASCADE,
+            match_date   DATE,
+            home_score   INTEGER DEFAULT 0,
+            away_score   INTEGER DEFAULT 0,
+            status       VARCHAR(20) DEFAULT 'scheduled'
+        )`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS fantasy_match_events (
+            event_id          SERIAL PRIMARY KEY,
+            fantasy_match_id  INTEGER REFERENCES fantasy_matches(match_id) ON DELETE CASCADE,
+            fantasy_player_id INTEGER REFERENCES fantasy_players(player_id) ON DELETE SET NULL,
+            event_type        VARCHAR(30),
+            minute            INTEGER
+        )`);
 }
 
 // ── Competitions list endpoint (distinct from matches) ─────────────────────
