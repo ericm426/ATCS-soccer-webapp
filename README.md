@@ -1,6 +1,6 @@
-# OmniTrack · Soccer
+# OmniTrack 
 
-A full-stack soccer tracking web app — follow live scores, league standings, UCL brackets, player stats, and build your own fantasy teams.
+A full-stack soccer tracking web app. Follow live scores, league standings, UCL brackets, player stats, and build your own fantasy teams.
 
 ---
 
@@ -18,7 +18,7 @@ npm install
 ### 2. Configure environment
 Create a `.env` file in the project root:
 ```
-DB_USER=postgres
+DB_USER=yourusername
 DB_PASSWORD=yourpassword
 DB_HOST=localhost
 DB_PORT=5432
@@ -33,7 +33,7 @@ CREATE DATABASE "soccer-app";
 ```
 Then run the schema file:
 ```bash
-psql -U postgres -d soccer-app -f sql_queries/database.sql
+psql -U yourusername -d soccer-app -f sql_queries/database.sql
 ```
 Fantasy tables are created automatically on first server start via `initDb()`.
 
@@ -162,6 +162,6 @@ Open **http://localhost:3000** in your browser.
 |---|---|
 | Database | PostgreSQL 16 |
 | Backend | Node.js 18 + Express |
-| Frontend | Vanilla HTML / CSS / JavaScript (ES modules, no bundler) |
+| Frontend | Regular HTML / CSS / JavaScript |
 | Data | football-data.org (auto-sync) + API-Football v3 (on-demand photos/lineups) |
 | Fonts | Barlow Condensed, Inter (Google Fonts) |
